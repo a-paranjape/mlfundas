@@ -513,7 +513,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['data_dim']: int, input data dimension
             -- params['L']: int, L >= 1, number of layers
             -- params['n_layer']: list of L int, number of units in each layer. ** must have n_layer[-1] = y.shape[0] **
-            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','relu','sm','lin']
+            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin']
             -- params['loss_type']: str, loss function in ['square','hinge','nll','nllm']
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
             ** Note that last entry in 'atypes' must be consistent with 'loss' **
@@ -546,6 +546,8 @@ class Sequential(Module,MLUtilities,Utilities):
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
                 mod.append(ReLU())
+            elif self.atypes[l-1] == 'tanh':
+                mod.append(Tanh())
             elif self.atypes[l-1] == 'sigm':
                 mod.append(Sigmoid())
             elif self.atypes[l-1] == 'lin':
@@ -668,7 +670,7 @@ class Sequential(Module,MLUtilities,Utilities):
         # modify last activation into labels if needed.
         # if labels, these will always be non-negative
         Ypred = self.modules[-1].predict()
-        if self.neg_labels:
+        if (self.net_type == 'class') & self.neg_labels:
             # convert 0 to -1 if needed.
             Ypred[Ypred == 0.0] = -1.0
         return Ypred
