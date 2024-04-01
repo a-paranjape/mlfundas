@@ -526,6 +526,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
             Provides forward, backward, sgd_step and sgd methods. Use sgd to train on given data set.
         """
+
         self.n0 = params.get('data_dim',None)
         self.L = params.get('L',1)
         self.n_layer = params.get('n_layer',[1]) # last n_layer should be compatible with y.shape
@@ -538,6 +539,28 @@ class Sequential(Module,MLUtilities,Utilities):
         self.logfile = params.get('logfile',None)
         
         self.rng = np.random.RandomState(self.seed)
+        
+        self.check_init()
+        
+        mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
+        for l in range(1,self.L+1):
+            if self.atypes[l-1] == 'relu':
+                mod.append(ReLU())
+            elif self.atypes[l-1] == 'sigm':
+                mod.append(Sigmoid())
+            elif self.atypes[l-1] == 'lin':
+                mod.append(Identity())
+            elif self.atypes[l-1] == 'sm':
+                mod.append(SoftMax())
+            if l < self.L:
+                mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
+                
+        self.modules = mod
+        self.net_type = 'reg' if self.loss_type == 'square' else 'class'
+        self.modules[-1].net_type = self.net_type # set last activation module net_type
+
+    def check_init(self):
+        """ Run various self-consistency checks at initialization. """
 
         if self.n0 is None:
             raise ValueError("data_dim must be specified in Sequential()")
@@ -567,23 +590,6 @@ class Sequential(Module,MLUtilities,Utilities):
                 self.atypes[-1] = 'sm'
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in Sequential().")
-        
-        mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
-        for l in range(1,self.L+1):
-            if self.atypes[l-1] == 'relu':
-                mod.append(ReLU())
-            elif self.atypes[l-1] == 'sigm':
-                mod.append(Sigmoid())
-            elif self.atypes[l-1] == 'lin':
-                mod.append(Identity())
-            elif self.atypes[l-1] == 'sm':
-                mod.append(SoftMax())
-            if l < self.L:
-                mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
-                
-        self.modules = mod
-        self.net_type = 'reg' if self.loss_type == 'square' else 'class'
-        self.modules[-1].net_type = self.net_type # set last activation module net_type
 
     def forward(self,Xt): # update activations
         for m in self.modules:
