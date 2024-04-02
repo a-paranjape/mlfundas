@@ -539,9 +539,12 @@ class Sequential(Module,MLUtilities,Utilities):
         self.logfile = params.get('logfile',None)
         
         self.rng = np.random.RandomState(self.seed)
+
+        if self.verbose:
+            self.print_this("Setting up {0:d} layer feed-forward neural network...".format(self.L),self.logfile)
         
         self.check_init()
-        
+
         mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
@@ -557,6 +560,17 @@ class Sequential(Module,MLUtilities,Utilities):
             if l < self.L:
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
                 
+        if self.verbose:
+            self.print_this("... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
+            self.print_this("... using hidden layers of sizes ["
+                            +','.join([str(self.n_layer[i]) for i in range(self.L-1)])
+                            +"]",self.logfile)
+            self.print_this("... and activations ["
+                            +','.join([self.atypes[i] for i in range(self.L-1)])
+                            +"]",self.logfile)
+            self.print_this("... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
+            self.print_this("... using loss function '"+self.loss_type+"'",self.logfile)
+            
         self.modules = mod
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
         self.modules[-1].net_type = self.net_type # set last activation module net_type
@@ -576,20 +590,26 @@ class Sequential(Module,MLUtilities,Utilities):
         if self.loss_type in ['square','hinge']:
             self.loss = Square() if self.loss_type == 'square' else Hinge()
             if self.atypes[-1] != 'lin':
-                self.print_this("Incompatible last activation for loss "
-                                +self.loss_type
-                                +" in Sequential(). Setting to 'lin'.",self.logfile)
-                self.atypes[-1] = 'lin'
+                self.print_this("Warning: last activation " + self.atypes[-1]
+                                + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
+                # self.print_this("Incompatible last activation for loss "
+                #                 +self.loss_type
+                #                 +" in Sequential(). Setting to 'lin'.",self.logfile)
+                # self.atypes[-1] = 'lin'
         elif self.loss_type == 'nll':
             self.loss = NLL()
             if self.atypes[-1] != 'sigm':
-                self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sigm'.",self.logfile)
-                self.atypes[-1] = 'sigm'
+                self.print_this("Warning: last activation " + self.atypes[-1]
+                                + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
+                # self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sigm'.",self.logfile)
+                # self.atypes[-1] = 'sigm'
         elif self.loss_type == 'nllm':
             self.loss = NLLM()
             if self.atypes[-1] != 'sm':
-                self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sm'.",self.logfile)
-                self.atypes[-1] = 'sm'
+                self.print_this("Warning: last activation " + self.atypes[-1]
+                                + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
+                # self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sm'.",self.logfile)
+                # self.atypes[-1] = 'sm'
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in Sequential().")
 
@@ -616,6 +636,9 @@ class Sequential(Module,MLUtilities,Utilities):
         lrate = params.get('lrate',0.005)
         mb_count = params.get('mb_count',1)
         
+        if self.verbose:
+            self.print_this("Training...",self.logfile)
+            
         d,n_samp = X.shape
 
         if d != self.n0:
@@ -659,6 +682,9 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
 
+        if self.verbose:
+            self.print_this("... done",self.logfile)
+            
         return
 
     def predict(self,X):
