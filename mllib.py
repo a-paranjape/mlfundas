@@ -1,5 +1,6 @@
 import numpy as np
 from utilities import Utilities
+import copy
 
 #############################################
 class MLUtilities(object):
@@ -581,7 +582,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.rng = np.random.RandomState(self.seed)
 
         if self.verbose:
-            self.print_this("Setting up {0:d} layer feed-forward neural network...".format(self.L),self.logfile)
+            self.print_this("... setting up {0:d} layer feed-forward neural network".format(self.L),self.logfile)
         
         self.check_init()
 
@@ -601,17 +602,17 @@ class Sequential(Module,MLUtilities,Utilities):
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
                 
         if self.verbose:
-            self.print_this("... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
-            self.print_this("... using hidden layers of sizes ["
+            self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
+            self.print_this("... ... using hidden layers of sizes ["
                             +','.join([str(self.n_layer[i]) for i in range(self.L-1)])
                             +"]",self.logfile)
-            self.print_this("... and activations ["
+            self.print_this("... ... ... and activations ["
                             +','.join([self.atypes[i] for i in range(self.L-1)])
                             +"]",self.logfile)
-            self.print_this("... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
-            self.print_this("... using loss function '"+self.loss_type+"'",self.logfile)
+            self.print_this("... ... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
+            self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
             if self.reg_fun == 'drop':
-                self.print_this("... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
+                self.print_this("... ... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             
         self.modules = mod
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
@@ -624,39 +625,32 @@ class Sequential(Module,MLUtilities,Utilities):
             raise ValueError("data_dim must be specified in Sequential()")
             
         if len(self.atypes) != self.L:
-            raise TypeError('Incompatible atypes in Sequential()')
+            raise TypeError('Incompatible atypes in Sequential(). Expecting size {0:d}, got {1:d}'.format(self.L,len(self.atypes)))
         
         if len(self.n_layer) != self.L:
-            raise TypeError('Incompatible n_layer in Sequential()')
+            raise TypeError('Incompatible n_layer in Sequential(). Expecting size {0:d}, got {1:d}'.format(self.L,len(self.n_layer)))
         
         if self.loss_type in ['square','hinge']:
             self.loss = Square() if self.loss_type == 'square' else Hinge()
-            if self.atypes[-1] != 'lin':
+            if self.verbose & (self.atypes[-1] != 'lin'):
                 self.print_this("Warning: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
-                # self.print_this("Incompatible last activation for loss "
-                #                 +self.loss_type
-                #                 +" in Sequential(). Setting to 'lin'.",self.logfile)
-                # self.atypes[-1] = 'lin'
         elif self.loss_type == 'nll':
             self.loss = NLL()
-            if self.atypes[-1] != 'sigm':
+            if self.verbose & (self.atypes[-1] != 'sigm'):
                 self.print_this("Warning: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
-                # self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sigm'.",self.logfile)
-                # self.atypes[-1] = 'sigm'
         elif self.loss_type == 'nllm':
             self.loss = NLLM()
-            if self.atypes[-1] != 'sm':
+            if self.verbose & (self.atypes[-1] != 'sm'):
                 self.print_this("Warning: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
-                # self.print_this("Incompatible last activation for loss nll in Sequential(). Setting to 'sm'.",self.logfile)
-                # self.atypes[-1] = 'sm'
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in Sequential().")
 
         if self.reg_fun not in ['bn','drop','none']:
-            print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
+            if self.verbose:
+                print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
             self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
         if self.reg_fun == 'bn':
             raise ValueError("Batch-normalization not implemented in this class. Try reg_fun 'drop' or 'none'.")
@@ -685,7 +679,7 @@ class Sequential(Module,MLUtilities,Utilities):
         mb_count = params.get('mb_count',1)
         
         if self.verbose:
-            self.print_this("Training...",self.logfile)
+            self.print_this("... training",self.logfile)
             
         d,n_samp = X.shape
 
@@ -698,12 +692,14 @@ class Sequential(Module,MLUtilities,Utilities):
             raise TypeError("Incompatible n_samp in data and target in Sequential.sgd().")
 
         if (mb_count > n_samp) | (mb_count < 1):
-            self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp (standard SGD).",self.logfile)
+            if self.verbose:
+                self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp (standard SGD).",self.logfile)
             mb_count = n_samp
         if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
-            print_str = "Large mb_count might lead to uneven mini-batch sizes in Sequential.sgd()."
-            print_str += " Setting to int(sqrt(n_samp))."
-            self.print_this(print_str,self.logfile)
+            if self.verbose:
+                print_str = "Large mb_count might lead to uneven mini-batch sizes in Sequential.sgd()."
+                print_str += " Setting to int(sqrt(n_samp))."
+                self.print_this(print_str,self.logfile)
             mb_count = int(np.sqrt(n_samp))
             
         mb_size = n_samp // mb_count
@@ -739,7 +735,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 m.W *= (1-self.p_drop)
                 
         if self.verbose:
-            self.print_this("... done",self.logfile)
+            self.print_this("... ... done",self.logfile)
             
         return
 
@@ -757,4 +753,148 @@ class Sequential(Module,MLUtilities,Utilities):
             Ypred[Ypred == 0.0] = -1.0
         return Ypred
         
+#################################
+
+
+#################################
+# Wrapper to systematically develop NN
+#################
+class BuildNN(Module,MLUtilities,Utilities):
+    """ Systematically build and train feed-forward NN for given set of data and targets. """
+    def __init__(self,X=None,Y=None,train_frac=0.5,
+                 max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_loss=True,
+                 seed=None,verbose=True,logfile=None):
+        self.X = X
+        self.Y = Y
+        self.train_frac = train_frac
+        self.max_layer = max_layer # max no. of layers
+        self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
+        self.target_test_loss = target_test_loss
+        self.loss_type = loss_type
+        self.neg_loss = neg_loss # in case of classification, are labels {-1,1} (True) or {0,1} (False)
+        self.seed = seed
+        self.verbose = verbose
+        self.logfile = logfile
+
+        if self.verbose:
+            self.print_this("Building feed-forward neural network...",self.logfile)
+        
+        self.check_input()
+
+        self.n_samp = self.X.shape[1]
+        self.data_dim = self.X.shape[0]
+        self.target_dim = self.Y.shape[0]            
+        self.n_train = np.rint(self.train_frac*self.n_samp).astype(int)
+        self.n_test = self.n_samp - self.n_train
+        if self.verbose:
+            self.print_this("... found data set of dimension {0:d} with targets of dimension {1:d}"
+                            .format(self.data_dim,self.target_dim),self.logfile)
+            self.print_this("... found {0:d} samples"
+                            .format(self.n_samp),self.logfile)
+            self.print_this("... fraction {0:.3f} ({1:d} samples) will be used for training"
+                            .format(self.train_frac,self.n_train),self.logfile)
+            self.print_this("... setting up training and test samples",self.logfile)
+        
+        self.rng = np.random.RandomState(self.seed)
+        self.ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
+        self.ind_test = np.delete(np.arange(self.n_samp),self.ind_train) # Note ind_test is ordered although ind_train is randomised
+
+        self.X_train = self.X[:,self.ind_train].copy()
+        self.Y_train = self.Y[:,self.ind_train].copy()
+
+        self.X_test = self.X[:,self.ind_test].copy()
+        self.Y_test = self.Y[:,self.ind_test].copy()
+        
+        if self.verbose:
+            self.print_this("... setup complete",self.logfile)
+
+    def check_input(self):
+        """ Utility to check input for BuildNN(). """
+        if (self.X is None) | (self.Y is None):
+            raise TypeError("BuildNN() needs data set X (d,n_samp) and Y (K,n_samp) to be specified.")
+        
+        # Expect X.shape = (n0,n_samp), Y.shape = (n_layer[-1],n_samp)
+        if self.X.shape[1] != self.Y.shape[1]:
+            raise TypeError('Incompatible data and targets in BuildNN().')
+        # Expect loss_type in []
+        if self.loss_type not in ['square','hinge','nll','nllm']:
+            raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in BuildNN().")
+
+        # train_frac should be between 0 and 1, exclusive
+        if (self.train_frac <= 0.0) | (self.train_frac >= 1.0):
+            if self.verbose:
+                print("Warning: train_frac should be strictly between 0 and 1 in BuildNN(). Setting to 0.5")
+            self.train_frac = 0.5
+            
+        return
+
+    def trainNN(self):
+        """ Train various networks and select the one that minimizes test loss.
+            Returns: 
+            -- net: instance of Sequential 
+            -- params_setup: dictionary of parameters used for building net
+            -- params_train: dictionary of parameters used for training net
+            -- mean_test_loss: mean test loss using final network
+        """
+        if self.verbose:
+            self.print_this("Initiating search... ",self.logfile)
+
+        mean_test_loss = 1e30
+        mean_test_loss_prev = 1e30
+        last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
+        hidden_atypes = ['tanh','relu']
+        layers = np.arange(1,self.max_layer+1)
+        max_epochs = 10**(layers+1) # think of better way
+        max_epochs = max_epochs.astype(int)
+        max_epochs[max_epochs > 33333] = 33333 # hard upper bound for now. absolute max will be 3*this.
+        mb_counts = lambda mep: 20 if mep < 1000 else (10 if mep < 10000 else 5)
+        lrates = np.array([0.001,0.005,0.01])
+        
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
+                'verbose':False,'logfile':self.logfile,'neg_loss':self.neg_loss}
+        ptrn = {}
+
+        net = None
+        params_setup = None
+        params_train = None
+
+        cnt_max = layers.size*3*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) # 3 is for hard-coded meps below
+        cnt = 0
+        if self.verbose:
+            self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
+        for ll in range(layers.size):
+            L = layers[ll]
+            pset['L'] = L
+            meps = np.array([max_epochs[ll]//3,max_epochs[ll],3*max_epochs[ll]])
+            for mep in meps:
+                ptrn['max_epoch'] = mep
+                ptrn['mb_count'] = mb_counts(mep)
+                for lrate in lrates:
+                    ptrn['lrate'] = lrate
+                    for ex in range(self.max_ex+1): 
+                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                        for last_atype in last_atypes:
+                            for htype in hidden_atypes:
+                                pset['atypes'] = [htype]*(L-1) + [last_atype]                                
+                                net_this = Sequential(params=pset)
+                                net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                Ypred = net_this.predict(self.X_test)
+                                mean_test_loss = net_this.loss.forward(Ypred,self.Y_test)/self.n_test
+                                if mean_test_loss < mean_test_loss_prev:
+                                    # store the current best network
+                                    net = copy.deepcopy(net_this)
+                                    params_setup = copy.deepcopy(pset)
+                                    params_setup['verbose'] = self.verbose
+                                    params_train = copy.deepcopy(ptrn)
+                                    # record current best mean test loss
+                                    mean_test_loss_prev = 1.0*mean_test_loss
+                                    
+                                if mean_test_loss <= self.target_test_loss:
+                                    return net,params_setup,params_train,mean_test_loss
+                                
+                                if self.verbose:
+                                    self.status_bar(cnt,cnt_max)
+                                cnt += 1
+
+        return net,params_setup,params_train,mean_test_loss
 #################################
