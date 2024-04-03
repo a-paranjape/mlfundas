@@ -762,11 +762,12 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,
-                 max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_loss=True,
+                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_loss=True,
                  seed=None,verbose=True,logfile=None):
         self.X = X
         self.Y = Y
         self.train_frac = train_frac
+        self.min_layer = min_layer # min no. of layers
         self.max_layer = max_layer # max no. of layers
         self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
         self.target_test_loss = target_test_loss
@@ -843,7 +844,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         mean_test_loss_prev = 1e30
         last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
         hidden_atypes = ['tanh','relu']
-        layers = np.arange(1,self.max_layer+1)
+        layers = np.arange(self.min_layer,self.max_layer+1)
         max_epochs = 10**(layers+1) # think of better way
         max_epochs = max_epochs.astype(int)
         max_epochs[max_epochs > 33333] = 33333 # hard upper bound for now. absolute max will be 3*this.
@@ -885,11 +886,14 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     net = copy.deepcopy(net_this)
                                     params_setup = copy.deepcopy(pset)
                                     params_setup['verbose'] = self.verbose
+                                    net.verbose = self.verbose
                                     params_train = copy.deepcopy(ptrn)
                                     # record current best mean test loss
                                     mean_test_loss_prev = 1.0*mean_test_loss
                                     
                                 if mean_test_loss <= self.target_test_loss:
+                                    if self.verbose:
+                                        self.print_this("... achieved target test loss; breaking out",self.logfile)
                                     return net,params_setup,params_train,mean_test_loss
                                 
                                 if self.verbose:
