@@ -294,15 +294,27 @@ class Module(object):
     def sgd_step(self,t,lrate):
         return # for modules without weights
 
+    def drop_fun(self,A,p_drop=0.2,rng=None):
+        rng_use = np.random.RandomState() if rng is None else rng
+        u = rng_use.rand(A.shape[0],A.shape[1])
+        drop = np.ones_like(A)
+        drop[u < self.p_drop] = 0.0 # since probab to drop is specified
+        return A*drop
+    
 #################################
 # possible activation modules
 #################
 class Sigmoid(Module,MLUtilities):
-    def __init__(self):
+    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
         self.net_type = 'class'
+        self.reg_fun = reg_fun
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = 1/(1+np.exp(-Z))
+        if self.reg_fun == 'drop':
+            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -317,11 +329,16 @@ class Sigmoid(Module,MLUtilities):
 
 #################
 class Tanh(Module,MLUtilities):
-    def __init__(self):
+    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
         self.net_type = 'reg'
+        self.reg_fun = reg_fun
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = np.tanh(Z)
+        if self.reg_fun == 'drop':
+            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):     
@@ -334,11 +351,16 @@ class Tanh(Module,MLUtilities):
 
 #################
 class ReLU(Module,MLUtilities):
-    def __init__(self):
+    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
         self.net_type = 'reg'
+        self.reg_fun = reg_fun
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = np.maximum(0.0,Z)
+        if self.reg_fun == 'drop':
+            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -353,11 +375,16 @@ class ReLU(Module,MLUtilities):
 
 #################
 class Identity(Module,MLUtilities):
-    def __init__(self):
+    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
         self.net_type = 'reg'
+        self.reg_fun = reg_fun
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = Z.copy()
+        if self.reg_fun == 'drop':
+            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -369,12 +396,17 @@ class Identity(Module,MLUtilities):
 
 #################
 class SoftMax(Module,MLUtilities):
-    def __init__(self):
+    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
         self.net_type = 'class'
+        self.reg_fun = reg_fun
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         exp_z = np.exp(Z) # (K,n_{sample})
         self.A = exp_z/np.sum(exp_z,axis=0)
+        if self.reg_fun == 'drop':
+            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A # (K,n_{sample})
 
     def backward(self,dLdA):
@@ -520,6 +552,12 @@ class Sequential(Module,MLUtilities,Utilities):
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
             ** loss type will take precedence in case of inconsistency **
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
+            -- params['reg_fun']: str, type of regularization.
+                                  Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
+                                  If 'drop', then value of 'p_drop' must be specified. Default 'none'.
+            -- params['p_drop']: float between 0 and 1, drop probability.
+                                 Only used if 'reg_fun' = 'drop'.
+                                 Default value 0.5, but not clear if this is a good choice.
             -- params['seed']: int, random number seed.
             -- params['verbose']: boolean, whether of not to print output (default True).
             -- params['logfile']: None or str, file into which to print output (default None, print to stdout)
@@ -534,6 +572,8 @@ class Sequential(Module,MLUtilities,Utilities):
         self.loss_type = params.get('loss_type','nll') # loss and last atype must be consistent
         self.neg_labels = params.get('neg_labels',True)
         self.adam = params.get('adam',True)
+        self.reg_fun = params.get('reg_fun','none')
+        self.p_drop = params.get('p_drop',0.0)
         self.seed = params.get('seed',None)
         self.verbose = params.get('verbose',True)
         self.logfile = params.get('logfile',None)
@@ -548,15 +588,15 @@ class Sequential(Module,MLUtilities,Utilities):
         mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
-                mod.append(ReLU())
+                mod.append(ReLU(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
             elif self.atypes[l-1] == 'tanh':
-                mod.append(Tanh())
+                mod.append(Tanh(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
             elif self.atypes[l-1] == 'sigm':
-                mod.append(Sigmoid())
+                mod.append(Sigmoid(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
             elif self.atypes[l-1] == 'lin':
-                mod.append(Identity())
+                mod.append(Identity(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
             elif self.atypes[l-1] == 'sm':
-                mod.append(SoftMax())
+                mod.append(SoftMax(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
             if l < self.L:
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
                 
@@ -570,6 +610,8 @@ class Sequential(Module,MLUtilities,Utilities):
                             +"]",self.logfile)
             self.print_this("... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
             self.print_this("... using loss function '"+self.loss_type+"'",self.logfile)
+            if self.reg_fun == 'drop':
+                self.print_this("... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             
         self.modules = mod
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
@@ -612,6 +654,12 @@ class Sequential(Module,MLUtilities,Utilities):
                 # self.atypes[-1] = 'sm'
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in Sequential().")
+
+        if self.reg_fun not in ['bn','drop','none']:
+            print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
+            self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
+        if self.reg_fun == 'bn':
+            raise ValueError("Batch-normalization not implemented in this class. Try reg_fun 'drop' or 'none'.")
 
     def forward(self,Xt): # update activations
         for m in self.modules:
@@ -682,6 +730,14 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
 
+        if self.reg_fun == 'drop':
+            if self.verbose:
+                self.print_this("... correcting for drop regularization",self.logfile)
+            # multiply all weights by 1-p_drop. ** CHECK THIS ** (ML course says p, not 1-p!)
+            # biases untouched.
+            for m in self.modules[::2]:
+                m.W *= (1-self.p_drop)
+                
         if self.verbose:
             self.print_this("... done",self.logfile)
             
