@@ -413,6 +413,50 @@ class DropNorm(Module,MLUtilities):
 #################################
 
 #################################
+class BatchNorm(Module,MLUtilities):
+    # structure courtesy MIT-OLL IntroML Course
+    def __init__(self,n_this,rng=None):
+        self.n_this = n_this # input layer dimension
+        self.rng = np.random.RandomState() if rng is None else rng
+        self.eps = 1e-8
+        self.G = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1)
+        self.B = rng.randn(n_this,1) # (n_this,1)
+
+    def forward(self,A):
+        self.A = A
+        self.K = A.shape[1] # mini-batch size
+        
+        self.mus = np.mean(A,axis=1,keepdims=True)
+        self.vars = np.var(A,axis=1,keepdims=True)
+        
+        self.std_inv = 1/np.sqrt(self.vars+self.eps)
+        self.A_min_mu = self.A-self.mus
+        self.norm = self.A_min_mu/self.std_inv # normalised version of input
+
+        return self.G*self.norm + self.B # scaled, shifted output
+
+    def backward(self,dLdA):
+        # dLdX_{ij} = dLdA_{ij}*G_i/(sig_i+eps)*[1 - (1/K)sum_q dLdA_{iq} - 1/(sig_i+eps)(1/K)sum_q dLdA_{iq}(A_{iq}-mu_i)(A_{ij}-mu_i)]
+        dLdnorm = dLdA*self.G*self.std_inv # (n_this,K) * (n_this,1) = (n_this,K)
+        dLdX = dLdnorm.copy() # first term
+        dLdX -= np.mean(dLdnorm,axis=1,keepdims=True) # second term
+        dLdX -= self.std_inv*self.A_min_mu*np.mean(dLdnorm*self.A_min_mu,axis=1,keepdims=True)
+
+        self.dLdB = np.sum(dLdA,axis=1,keepdims=True)
+        self.dLdG = np.sum(dLdA*self.norm,axis=1,keepdims=True)
+
+        return dLdX
+
+    def sgd_step(self,t,lrate):
+        # consider including adam support
+        self.B -= lrate*self.dLdB
+        self.G -= lrate*self.dLdG
+        return 
+#################################
+    
+#################################
+
+#################################
 # possible loss functions
 #################
 class NLL(Module,MLUtilities):
@@ -592,6 +636,8 @@ class Sequential(Module,MLUtilities,Utilities):
             if l < self.L:
                 if self.reg_fun == 'drop':
                     mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng))
+                elif self.reg_fun == 'bn':
+                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng))
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
                 
         if self.verbose:
@@ -606,6 +652,10 @@ class Sequential(Module,MLUtilities,Utilities):
             self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
             if self.reg_fun == 'drop':
                 self.print_this("... ... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
+            elif self.reg_fun == 'bn':
+                self.print_this("... ... using batch normalization",self.logfile)
+            else:
+                self.print_this("... ... not using any regularization",self.logfile)
             
         self.modules = mod
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
@@ -645,8 +695,6 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
             self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
-        if self.reg_fun == 'bn':
-            raise ValueError("Batch-normalization not implemented in this class. Try reg_fun 'drop' or 'none'.")
 
     def forward(self,Xt): # update activations
         for m in self.modules:
@@ -711,7 +759,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
                 self.epoch_loss[t] += batch_loss
                 dLdZ = self.loss.backward() # loss.backward returns last dLdZ not dLdA
-                    
+
                 self.backward(dLdZ) # update gradients
                 # self.backward skips last activation, since loss.backward gives last dLdZ
 
