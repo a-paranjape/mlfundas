@@ -418,9 +418,9 @@ class BatchNorm(Module,MLUtilities):
     def __init__(self,n_this,rng=None):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
-        self.eps = 1e-8
+        self.eps = 1e-30
         self.G = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1)
-        self.B = rng.randn(n_this,1) # (n_this,1)
+        self.B = np.zeros((n_this,1))#rng.randn(n_this,1) # (n_this,1)
 
     def forward(self,A):
         self.A = A
@@ -448,7 +448,7 @@ class BatchNorm(Module,MLUtilities):
         return dLdX
 
     def sgd_step(self,t,lrate):
-        # consider including adam support
+        # adam support might be critical
         self.B -= lrate*self.dLdB
         self.G -= lrate*self.dLdG
         return 
@@ -886,12 +886,13 @@ class BuildNN(Module,MLUtilities,Utilities):
         mean_test_loss_prev = 1e30
         last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
         hidden_atypes = ['tanh','relu']
+        reg_funs = ['none','bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
         max_epochs = 10**(layers+1) # think of better way
         max_epochs = max_epochs.astype(int)
-        max_epochs[max_epochs > 33333] = 33333 # hard upper bound for now. absolute max will be 3*this.
+        max_epochs[max_epochs > 3333] = 3333 # hard upper bound for now. absolute max will be 3*this.
         mb_counts = lambda mep: 20 if mep < 1000 else (10 if mep < 10000 else 5)
-        lrates = np.array([0.001,0.005,0.01])
+        lrates = np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'verbose':False,'logfile':self.logfile,'neg_loss':self.neg_loss}
@@ -901,7 +902,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*3*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) # 3 is for hard-coded meps below
+        cnt_max = layers.size*3*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) # 3 is for hard-coded meps below
         cnt = 0
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
@@ -916,31 +917,33 @@ class BuildNN(Module,MLUtilities,Utilities):
                     ptrn['lrate'] = lrate
                     for ex in range(self.max_ex+1): 
                         pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                        for last_atype in last_atypes:
-                            for htype in hidden_atypes:
-                                pset['atypes'] = [htype]*(L-1) + [last_atype]                                
-                                net_this = Sequential(params=pset)
-                                net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                Ypred = net_this.predict(self.X_test)
-                                mean_test_loss = net_this.loss.forward(Ypred,self.Y_test)/self.n_test
-                                if mean_test_loss < mean_test_loss_prev:
-                                    # store the current best network
-                                    net = copy.deepcopy(net_this)
-                                    params_setup = copy.deepcopy(pset)
-                                    params_setup['verbose'] = self.verbose
-                                    net.verbose = self.verbose
-                                    params_train = copy.deepcopy(ptrn)
-                                    # record current best mean test loss
-                                    mean_test_loss_prev = 1.0*mean_test_loss
-                                    
-                                if mean_test_loss <= self.target_test_loss:
+                        for rf in reg_funs:
+                            pset['reg_fun'] = rf
+                            for last_atype in last_atypes:
+                                for htype in hidden_atypes:
+                                    pset['atypes'] = [htype]*(L-1) + [last_atype]                                
+                                    net_this = Sequential(params=pset)
+                                    net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                    Ypred = net_this.predict(self.X_test)
+                                    mean_test_loss = net_this.loss.forward(Ypred,self.Y_test)/self.n_test
+                                    if mean_test_loss < mean_test_loss_prev:
+                                        # store the current best network
+                                        net = copy.deepcopy(net_this)
+                                        params_setup = copy.deepcopy(pset)
+                                        params_setup['verbose'] = self.verbose
+                                        net.verbose = self.verbose
+                                        params_train = copy.deepcopy(ptrn)
+                                        # record current best mean test loss
+                                        mean_test_loss_prev = 1.0*mean_test_loss
+
+                                    if mean_test_loss <= self.target_test_loss:
+                                        if self.verbose:
+                                            self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                        return net,params_setup,params_train,mean_test_loss
+
                                     if self.verbose:
-                                        self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                    return net,params_setup,params_train,mean_test_loss
-                                
-                                if self.verbose:
-                                    self.status_bar(cnt,cnt_max)
-                                cnt += 1
+                                        self.status_bar(cnt,cnt_max)
+                                    cnt += 1
 
         return net,params_setup,params_train,mean_test_loss
 #################################
