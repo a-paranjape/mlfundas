@@ -293,29 +293,17 @@ class Perceptron(MLUtilities,Utilities):
 #############################################
 class Module(object):
     def sgd_step(self,t,lrate):
-        return # for modules without weights
-
-    def drop_fun(self,A,p_drop=0.2,rng=None):
-        rng_use = np.random.RandomState() if rng is None else rng
-        u = rng_use.rand(A.shape[0],A.shape[1])
-        drop = np.ones_like(A)
-        drop[u < self.p_drop] = 0.0 # since probab to drop is specified
-        return A*drop
+        return # does nothing for modules without weights
     
 #################################
 # possible activation modules
 #################
 class Sigmoid(Module,MLUtilities):
-    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
+    def __init__(self):
         self.net_type = 'class'
-        self.reg_fun = reg_fun
-        self.p_drop = p_drop
-        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = 1/(1+np.exp(-Z))
-        if self.reg_fun == 'drop':
-            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -330,16 +318,11 @@ class Sigmoid(Module,MLUtilities):
 
 #################
 class Tanh(Module,MLUtilities):
-    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
+    def __init__(self):
         self.net_type = 'reg'
-        self.reg_fun = reg_fun
-        self.p_drop = p_drop
-        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = np.tanh(Z)
-        if self.reg_fun == 'drop':
-            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):     
@@ -352,16 +335,11 @@ class Tanh(Module,MLUtilities):
 
 #################
 class ReLU(Module,MLUtilities):
-    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
+    def __init__(self):
         self.net_type = 'reg'
-        self.reg_fun = reg_fun
-        self.p_drop = p_drop
-        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = np.maximum(0.0,Z)
-        if self.reg_fun == 'drop':
-            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -376,16 +354,11 @@ class ReLU(Module,MLUtilities):
 
 #################
 class Identity(Module,MLUtilities):
-    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
+    def __init__(self):
         self.net_type = 'reg'
-        self.reg_fun = reg_fun
-        self.p_drop = p_drop
-        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         self.A = Z.copy()
-        if self.reg_fun == 'drop':
-            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A
 
     def backward(self,dLdA):
@@ -397,17 +370,12 @@ class Identity(Module,MLUtilities):
 
 #################
 class SoftMax(Module,MLUtilities):
-    def __init__(self,reg_fun='drop',p_drop=0.2,rng=None):
+    def __init__(self):
         self.net_type = 'class'
-        self.reg_fun = reg_fun
-        self.p_drop = p_drop
-        self.rng = np.random.RandomState() if rng is None else rng
         
     def forward(self,Z):
         exp_z = np.exp(Z) # (K,n_{sample})
         self.A = exp_z/np.sum(exp_z,axis=0)
-        if self.reg_fun == 'drop':
-            self.A = self.drop_fun(self.A,p_drop=self.p_drop,rng=self.rng)
         return self.A # (K,n_{sample})
 
     def backward(self,dLdA):
@@ -420,6 +388,29 @@ class SoftMax(Module,MLUtilities):
 
 #################################
 
+
+#################################
+# possible normalizations
+#################
+class DropNorm(Module,MLUtilities):
+    def __init__(self,p_drop=0.2,rng=None):
+        self.p_drop = p_drop
+        self.rng = np.random.RandomState() if rng is None else rng
+
+    def drop_fun(self,A):
+        u = self.rng.rand(A.shape[0],A.shape[1])
+        drop = np.ones_like(A)
+        drop[u < self.p_drop] = 0.0 # since probab to drop is specified
+        return A*drop
+    
+    def forward(self,A): # will always follow activation layer
+        self.A = self.drop_fun(A) 
+        return self.A # (K,n_{sample})
+
+    def backward(self,dLdA):
+        return dLdA # does nothing
+
+#################################
 
 #################################
 # possible loss functions
@@ -589,16 +580,18 @@ class Sequential(Module,MLUtilities,Utilities):
         mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
-                mod.append(ReLU(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
+                mod.append(ReLU())
             elif self.atypes[l-1] == 'tanh':
-                mod.append(Tanh(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
+                mod.append(Tanh())
             elif self.atypes[l-1] == 'sigm':
-                mod.append(Sigmoid(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
+                mod.append(Sigmoid())
             elif self.atypes[l-1] == 'lin':
-                mod.append(Identity(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
+                mod.append(Identity())
             elif self.atypes[l-1] == 'sm':
-                mod.append(SoftMax(reg_fun=self.reg_fun,p_drop=self.p_drop,rng=self.rng))
+                mod.append(SoftMax())
             if l < self.L:
+                if self.reg_fun == 'drop':
+                    mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng))
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
                 
         if self.verbose:
@@ -726,13 +719,14 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
 
-        if self.reg_fun == 'drop':
-            if self.verbose:
-                self.print_this("... correcting for drop regularization",self.logfile)
-            # multiply all weights by 1-p_drop. ** CHECK THIS ** (ML course says p, not 1-p!)
-            # biases untouched.
-            for m in self.modules[::2]:
-                m.W *= (1-self.p_drop)
+        # if self.reg_fun == 'drop':
+        #     if self.verbose:
+        #         self.print_this("... correcting for drop regularization",self.logfile)
+        #     # multiply all weights by 1-p_drop. ** CHECK THIS ** (ML course says p, not 1-p!)
+        #     # biases untouched.
+        #     for m in self.modules[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+        #         m.W *= (1-self.p_drop)
+        # # commented out since forward method will always drop some activations when called by predict, so this would over-correct.
                 
         if self.verbose:
             self.print_this("... ... done",self.logfile)
@@ -893,7 +887,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     
                                 if mean_test_loss <= self.target_test_loss:
                                     if self.verbose:
-                                        self.print_this("... achieved target test loss; breaking out",self.logfile)
+                                        self.print_this("\n... achieved target test loss; breaking out",self.logfile)
                                     return net,params_setup,params_train,mean_test_loss
                                 
                                 if self.verbose:
