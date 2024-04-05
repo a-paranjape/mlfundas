@@ -418,7 +418,7 @@ class BatchNorm(Module,MLUtilities):
     def __init__(self,n_this,rng=None):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
-        self.eps = 1e-30
+        self.eps = 1e-15
         self.G = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1)
         self.B = np.zeros((n_this,1))#rng.randn(n_this,1) # (n_this,1)
 
