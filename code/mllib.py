@@ -108,7 +108,7 @@ class Evaluate(MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... done',self.logfile)
         
-        return perc.mean(),perc.std()/np.sqrt(it-1 + 1e-8)
+        return perc.mean(),perc.std()#/np.sqrt(it-1 + 1e-8)
 
     def xval_learning_alg(self,learner,X,Y,k,params={}):
         X_split = np.array_split(X,k,axis=1)
@@ -151,7 +151,7 @@ class Evaluate(MLUtilities,Utilities):
 
 #############################################
 class Perceptron(MLUtilities,Utilities):
-    def __init__(self,origin=False,init=None,verbose=True,hook=None,logfile=None,avg=False):
+    def __init__(self,origin=False,init=None,avg=False,verbose=True,hook=None,logfile=None):
         """ Perceptron algorithm.
             origin: whether to classify through origin (True) or include offset (False, default)
             init: None 
@@ -882,8 +882,6 @@ class BuildNN(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this("Initiating search... ",self.logfile)
 
-        mean_test_loss = 1e30
-        mean_test_loss_prev = 1e30
         last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
         hidden_atypes = ['tanh','relu']
         reg_funs = ['none','bn']
@@ -904,6 +902,8 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         cnt_max = layers.size*3*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) # 3 is for hard-coded meps below
         cnt = 0
+        mean_test_loss_this = 1e30
+        mean_test_loss = 1e25
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
         for ll in range(layers.size):
@@ -924,9 +924,9 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     pset['atypes'] = [htype]*(L-1) + [last_atype]                                
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    Ypred = net_this.predict(self.X_test)
-                                    mean_test_loss = net_this.loss.forward(Ypred,self.Y_test)/self.n_test
-                                    if mean_test_loss < mean_test_loss_prev:
+                                    Ypred_this = net_this.predict(self.X_test)
+                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                    if mean_test_loss_this < mean_test_loss:
                                         # store the current best network
                                         net = copy.deepcopy(net_this)
                                         params_setup = copy.deepcopy(pset)
@@ -934,7 +934,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         net.verbose = self.verbose
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
-                                        mean_test_loss_prev = 1.0*mean_test_loss
+                                        mean_test_loss = 1.0*mean_test_loss_this
 
                                     if mean_test_loss <= self.target_test_loss:
                                         if self.verbose:
@@ -945,5 +945,6 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         self.status_bar(cnt,cnt_max)
                                     cnt += 1
 
+        # return last stored network and mean test loss
         return net,params_setup,params_train,mean_test_loss
 #################################
