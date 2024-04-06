@@ -108,7 +108,7 @@ class Evaluate(MLUtilities,Utilities):
         if self.verbose:
             self.print_this('... done',self.logfile)
         
-        return perc.mean(),perc.std()#/np.sqrt(it-1 + 1e-8)
+        return perc.mean(),perc.std()/np.sqrt(it-1 + 1e-8)
 
     def xval_learning_alg(self,learner,X,Y,k,params={}):
         X_split = np.array_split(X,k,axis=1)
