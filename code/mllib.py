@@ -884,12 +884,12 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
         hidden_atypes = ['tanh','relu']
-        reg_funs = ['none','bn']
+        reg_funs = ['none']#,'bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
-        max_epochs = 10**(layers+1) # think of better way
-        max_epochs = max_epochs.astype(int)
-        max_epochs[max_epochs > 3333] = 3333 # hard upper bound for now. absolute max will be 3*this.
-        mb_counts = lambda mep: 20 if mep < 1000 else (10 if mep < 10000 else 5)
+        max_epochs = np.array([300,1000,3000]) 
+        # max_epochs = max_epochs.astype(int)
+        # max_epochs[max_epochs > 3333] = 3333 # hard upper bound for now. 
+        mb_counts = lambda mep: 20 if mep < 1000 else 10 #(10 if mep < 10000 else 5)
         lrates = np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
@@ -900,7 +900,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*3*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) # 3 is for hard-coded meps below
+        cnt_max = layers.size*max_epochs.size*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         mean_test_loss_this = 1e30
         mean_test_loss = 1e25
@@ -909,8 +909,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
-            meps = np.array([max_epochs[ll]//3,max_epochs[ll],3*max_epochs[ll]])
-            for mep in meps:
+            # meps = np.array([max_epochs[ll]//3,max_epochs[ll],3*max_epochs[ll]])
+            for mep in max_epochs:
                 ptrn['max_epoch'] = mep
                 ptrn['mb_count'] = mb_counts(mep)
                 for lrate in lrates:
@@ -947,4 +947,136 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         # return last stored network and mean test loss
         return net,params_setup,params_train,mean_test_loss
+#################################
+
+
+#################################
+# State Machine
+#################
+class StateMachine(MLUtilities,Utilities):
+    """ Basic building block for state machine. """
+    def __init__(self,f=None,g=None,verbose=True,logfile=None):
+        self.verbose = verbose
+        self.logfile = logfile
+
+        if (f is None) & self.verbose:
+            self.print_this("Transducer not specified in StateMachine(). Defaulting to identity.",self.logfile)
+        if (g is None) & self.verbose:
+            self.print_this("Output function not specified in StateMachine(). Defaulting to identity.",self.logfile)
+        self.f = f if f is not None else lambda s,x: s
+        self.g = g if g is not None else lambda s: s
+        
+
+    def execute(self,inputs,initial_state):
+        """ Execute state machine for given input and initialisation."""
+        s = initial_state
+        out = []
+        for x in inputs:
+            s = self.f(s,x)
+            out.append(self.g(s))
+        return np.array(out)
+        
+#################################
+
+
+#################################
+# Markov Decision Process
+#################
+class MarkovDecisionProcess(MLUtilities,Utilities):
+    """ Basic building block for Markov decision process. """
+    def __init__(self,states,actions,reward,transition,verbose=True,logfile=None):
+        Utilities.__init__(self)
+        self.verbose = verbose
+        self.logfile = logfile
+        self.states = states
+        self.actions = actions
+        self.reward = np.vectorize(reward)
+        self.transition = transition
+
+    def value_func(self,policy,horizon=None,gamma=0.1):
+        """ Calculate (finite horizon) value for given policy. 
+            -- policy: function object mapping states to actions. 
+            -- horizon: None or non-negative integer. 
+                        If None (default), then calculate infinite-horizon result with discount gamma. 
+            -- gamma: discount value in (0,1). Only used if horizon is None.
+            Returns array of values of shape (len(self.states),).
+        """
+        if horizon is None:
+            if (gamma < 0.0) | (gamma > 1.0):
+                raise ValueError("Discount gamma should be between zero and unity for infinite-horizon value function.")
+        vec_pol = np.vectorize(policy)
+        policy_actions = vec_pol(self.states)
+        if np.any(self.select_not_these(policy_actions,set(self.actions))):
+            raise ValueError("Unexpected action detected. Try with another policy.")
+
+        policy_rewards = self.reward(self.states,policy_actions)
+        
+        trans_matrix = np.zeros((len(self.states),len(self.states)))
+        for s in range(len(self.states)):
+            trans_matrix[s] = self.transition[policy_actions[s]][s] # set each row
+
+        values = np.zeros(len(self.states))
+        if horizon is None:
+            # careful with inversion
+            values = np.dot(np.inv(np.eye(len(self.states)) - gamma*trans_matrix),policy_rewards)
+        else:
+            for h in range(1,horizon+1):
+                values = policy_rewards + np.dot(trans_matrix,values)
+
+        return values
+
+    def value_iteration(self,horizon=None,gamma=1.0,eps=1e-3,max_iter=1000):
+        """ Calculate (finite horizon) optimal action-value function Q^{h}(s,a) using value iteration.
+            -- horizon: None or non-negative integer. 
+                        If None (default), then calculate infinite-horizon result with discount gamma. 
+            -- gamma: discount value in (0,1). Set to 1 if horizon is finite integer.
+            -- eps: small positive float, controls stopping criterion for infinite-horizon case. Only used if horizon is None.
+            -- max_iter: maximum number of iterations
+            Returns array of values of shape (len(self.actions),len(self.states)).
+        """
+        if horizon is None:
+            if (gamma < 0.0) | (gamma > 1.0):
+                raise ValueError("Discount gamma should be between zero and unity for infinite-horizon value function.")
+        else:
+            gamma = 1.0
+        Q = np.zeros((len(self.actions),len(self.states)))
+        
+        if horizon == 0:
+            return Q
+        
+        rewards = np.zeros_like(Q)
+        for a in range(len(self.actions)):
+            rewards[a] = self.reward(self.states,self.actions[a])
+            
+        if horizon is None:
+            Q_prev = Q.copy() # store previous Q values for exit condition
+        else:
+            h = 0 # counter for finite-horizon case
+            
+        for i in range(max_iter):
+            Qmax = np.max(Q,axis=0)
+            for a in range(len(self.actions)):
+                Q[a] = rewards[a] + gamma*np.dot(self.transition[self.actions[a]],Qmax)
+            if horizon is None:
+                if np.max(np.fabs(Q - Q_prev)) < eps:
+                    return Q
+                Q_prev = Q.copy()
+            else:
+                if h == horizon-1:
+                    return Q
+                h += 1
+
+        return Q
+
+    def optimal_policy(self,horizon=None,gamma=1.0,eps=1e-3,max_iter=1000):
+        Q = self.value_iteration(horizon=horizon,gamma=gamma,eps=eps,max_iter=max_iter)
+        pol_vec = []
+        a_inds = np.argmax(Q,axis=0)
+        for s in range(len(self.states)):
+            pol_vec.append(self.actions[a_inds[s]])
+        def opt_pol(state):
+            s = np.where(state == self.states)[0][0]
+            return pol_vec[s]
+        return np.vectorize(opt_pol)
+        
 #################################
