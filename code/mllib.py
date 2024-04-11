@@ -983,15 +983,20 @@ class StateMachine(MLUtilities,Utilities):
 # Markov Decision Process
 #################
 class MarkovDecisionProcess(MLUtilities,Utilities):
-    """ Basic building block for Markov decision process. """
-    def __init__(self,states,actions,reward,transition,verbose=True,logfile=None):
+    """ Markov decision process. """
+    def __init__(self,states,transition,reward,verbose=True,logfile=None):
+        """ Markov decision process. 
+            -- states: list of possible states
+            -- transition: dictionary of transition matrices, whose keys will be stored as self.actions
+            -- reward: function object with call sign reward(state,action). Must be compatible with states and transition.
+        """
         Utilities.__init__(self)
         self.verbose = verbose
         self.logfile = logfile
-        self.states = states
-        self.actions = actions
-        self.reward = np.vectorize(reward)
+        self.states = np.array(states)
         self.transition = transition
+        self.actions = np.array(list(self.transition.keys()))
+        self.reward = np.vectorize(reward)
 
     def value_func(self,policy,horizon=None,gamma=0.1):
         """ Calculate (finite horizon) value for given policy. 
@@ -1018,7 +1023,7 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
         values = np.zeros(len(self.states))
         if horizon is None:
             # careful with inversion
-            values = np.dot(np.inv(np.eye(len(self.states)) - gamma*trans_matrix),policy_rewards)
+            values = np.dot(np.linalg.inv(np.eye(len(self.states)) - gamma*trans_matrix),policy_rewards)
         else:
             for h in range(1,horizon+1):
                 values = policy_rewards + np.dot(trans_matrix,values)
@@ -1070,10 +1075,7 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
 
     def optimal_policy(self,horizon=None,gamma=1.0,eps=1e-3,max_iter=1000):
         Q = self.value_iteration(horizon=horizon,gamma=gamma,eps=eps,max_iter=max_iter)
-        pol_vec = []
-        a_inds = np.argmax(Q,axis=0)
-        for s in range(len(self.states)):
-            pol_vec.append(self.actions[a_inds[s]])
+        pol_vec = self.actions[np.argmax(Q,axis=0)]
         def opt_pol(state):
             s = np.where(state == self.states)[0][0]
             return pol_vec[s]
