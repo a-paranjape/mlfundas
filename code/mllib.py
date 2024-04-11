@@ -1054,6 +1054,7 @@ class RecurrentNeuralNetwork(StateMachine):
         StateMachine.__init__(self,initial_state=self.initial_state)
 
     def transition_func(self,s,x):
+        pass
 
 
 #################################
