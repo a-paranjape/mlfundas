@@ -42,7 +42,7 @@ class MLUtilities(object):
         out[z > 0.0] = 1.0
         return out
     ###################
-    
+
     ###################
     def length(self,col_v):
         return np.sqrt(np.sum(col_v**2))
@@ -1013,7 +1013,7 @@ class BinaryAddition(StateMachine):
 #################################
 
 #################################
-# Binary addition
+# Reverser
 #################
 class Reverser(StateMachine):
     def __init__(self):
@@ -1035,7 +1035,29 @@ class Reverser(StateMachine):
         return s[0]
         
 #################################
-        
+
+#################################
+# Recurrent neural network
+#################
+class RecurrentNeuralNetwork(StateMachine):
+    def __init__(self, Wsx, Wss, Wo, Wss_0, Wo_0, f1, f2, initial_state=None):
+        self.Wsx = Wsx
+        self.Wss = Wss
+        self.Wo = Wo
+        self.Wss_0 = Wss_0
+        self.Wo_0 = Wo_0
+        self.f1 = f1
+        self.f2 = f2
+        self.s_dim = self.Wsx.shape[0]
+        self.x_dim = self.Wsx.shape[1]
+        self.initial_state = np.zeros((self.s_dim,1))
+        StateMachine.__init__(self,initial_state=self.initial_state)
+
+    def transition_func(self,s,x):
+
+
+#################################
+
 #################################
 # Markov Decision Process
 #################
