@@ -955,30 +955,87 @@ class BuildNN(Module,MLUtilities,Utilities):
 #################
 class StateMachine(MLUtilities,Utilities):
     """ Basic building block for state machine. """
-    def __init__(self,f=None,g=None,verbose=True,logfile=None):
+    def __init__(self,verbose=True,logfile=None,initial_state=None):
         self.verbose = verbose
         self.logfile = logfile
 
-        if (f is None) & self.verbose:
-            self.print_this("Transducer not specified in StateMachine(). Defaulting to identity.",self.logfile)
-        if (g is None) & self.verbose:
-            self.print_this("Output function not specified in StateMachine(). Defaulting to identity.",self.logfile)
-        self.f = f if f is not None else lambda s,x: s
-        self.g = g if g is not None else lambda s: s
-        
+        self.initial_state = initial_state
 
-    def execute(self,inputs,initial_state):
-        """ Execute state machine for given input and initialisation."""
-        s = initial_state
+    def transition_func(self,s,x):
+        """ s: previous state, x: current input. Returns current state. """
+        raise NotImplementedError
+    
+    def output_func(self,s):
+        """ s: current state. Returns current output. """
+        raise NotImplementedError
+        
+    def transduce(self,input_seq):
+        """ Transduce state machine for given input and initialisation."""
+        s = self.initial_state
         out = []
-        for x in inputs:
-            s = self.f(s,x)
-            out.append(self.g(s))
+        for x in input_seq:
+            s = self.transition_func(s,x)
+            out.append(self.output_func(s))
         return np.array(out)
         
 #################################
 
+#################################
+# Accumulator as simple state machine
+#################
+class Accumulator(StateMachine):
+    def __init__(self):
+        StateMachine.__init__(self,initial_state=0)
+    
+    def transition_func(self,s,x):
+        return s + x
+    
+    def output_func(self,s):
+        return s
+#################################
 
+
+#################################
+# Binary addition
+#################
+class BinaryAddition(StateMachine):
+    def __init__(self):
+        StateMachine.__init__(self,initial_state=[0,0]) # s = (value,carry flag)
+    
+    def transition_func(self,s,x):
+        val = x[0] + x[1] + s[1]
+        s[0] = val % 2
+        s[1] = 1 if val > 1 else 0
+        return s
+    
+    def output_func(self,s):
+        return s[0]
+#################################
+
+#################################
+# Binary addition
+#################
+class Reverser(StateMachine):
+    def __init__(self):
+        StateMachine.__init__(self,initial_state=[None,[],1]) # s = (current output,stored values,flag)
+
+    def transition_func(self,s,x):
+        if (x != 'end') & s[2]:
+            s[0] = None
+            s[1].append(x)
+        else:
+            s[2] = 0
+            if len(s[1]) > 0:
+                s[0] = s[1].pop(-1)
+            else:
+                s[0] = None
+        return s
+    
+    def output_func(self,s):
+        return s[0]
+        
+#################################
+        
 #################################
 # Markov Decision Process
 #################
