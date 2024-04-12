@@ -1,6 +1,7 @@
 import numpy as np
 from utilities import Utilities
 import copy
+import pickle
 
 #############################################
 class MLUtilities(object):
@@ -308,7 +309,7 @@ class Module(object):
     def save(self):
         return
 
-    def read(self):
+    def load(self):
         return
     
     # force these methods to be defined explicitly in each module
@@ -482,7 +483,7 @@ class BatchNorm(Module,MLUtilities):
         np.savetxt(file_W0,self.W0,fmt='%.10e')
         return    
 
-    def read(self):
+    def load(self):
         """ Read weights from file(s). """
         file_W = self.file_stem + '_W.txt'
         file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
@@ -618,7 +619,7 @@ class Linear(Module,MLUtilities):
         np.savetxt(file_W0,self.W0,fmt='%.10e')
         return    
 
-    def read(self):
+    def load(self):
         """ Read weights from file(s). """
         file_W = self.file_stem + '_W.txt'
         file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
@@ -663,7 +664,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
             Provides forward, backward, sgd_step and sgd methods. Use sgd to train on given data set.
         """
-
+        self.params = params
         self.n0 = params.get('data_dim',None)
         self.L = params.get('L',1)
         self.n_layer = params.get('n_layer',[1]) # last n_layer should be compatible with y.shape
@@ -860,17 +861,24 @@ class Sequential(Module,MLUtilities,Utilities):
         return Ypred
 
     def save(self):
-        """ Save current weights to file(s). """
+        """ Save current weights and setup params to file(s). """
         for m in self.modules:
             m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
             m.save()
+        with open(self.file_stem + '.pkl', 'wb') as f:
+            pickle.dump(self.params,f)
+            
         return    
 
-    def read(self):
-        """ Read weights from file(s). """
+    # not very useful for params dict, since dependent attributes not updated
+    # better to use load method of BuildNN().
+    def load(self):
+        """ Load weights and setup params from file(s). """
         for m in self.modules:
             m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
-            m.read()
+            m.load()
+        with open(self.file_stem + '.pkl', 'wb') as f:
+            self.params = pickle.load(f)
         return
         
 #################################
@@ -1014,7 +1022,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
                                         mean_test_loss = 1.0*mean_test_loss_this
-                                        # save current best network to file
+                                        # save current best network (weights and setup dict) to file
                                         net.save()
 
                                     if mean_test_loss <= self.target_test_loss:
@@ -1028,6 +1036,12 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         # return last stored network and mean test loss
         return net,params_setup,params_train,mean_test_loss
+
+    def load(self):
+        """ Load existing network. """
+        with open(self.file_stem + '.pkl', 'wb') as f:
+            params_setup = pickle.load(f)
+        return Sequential(params=params_setup)
 #################################
 
 
