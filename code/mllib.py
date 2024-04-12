@@ -1034,8 +1034,8 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         self.status_bar(cnt,cnt_max)
                                     cnt += 1
 
-        # return last stored network and mean test loss
-        return net,params_setup,params_train,mean_test_loss
+        # return last stored network, training params and mean test loss
+        return net,params_train,mean_test_loss
 
     def load(self):
         """ Load existing network. """
