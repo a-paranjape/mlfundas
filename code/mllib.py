@@ -1039,7 +1039,7 @@ class BuildNN(Module,MLUtilities,Utilities):
 
     def load(self):
         """ Load existing network. """
-        with open(self.file_stem + '.pkl', 'wb') as f:
+        with open(self.file_stem + '.pkl', 'rb') as f:
             params_setup = pickle.load(f)
         return Sequential(params=params_setup)
 #################################
