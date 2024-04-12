@@ -292,16 +292,38 @@ class Perceptron(MLUtilities,Utilities):
 
 #############################################
 class Module(object):
+    def __init__(self,layer=1):
+        # for compatibility with weighted modules 
+        self.layer = layer
+        self.W = None
+        self.W0 = None
+        
+        # for saving / reading. will be dynamically modified.
+        self.file_stem = 'net' 
+    
+    # these methods do nothing for modules without weights    
     def sgd_step(self,t,lrate):
-        return # does nothing for modules without weights
+        return
+
+    def save(self):
+        return
+
+    def read(self):
+        return
+    
+    # force these methods to be defined explicitly in each module
+    def forward(self,A):
+        raise NotImplementedError
+    
+    def backward(self,dLdA):
+        raise NotImplementedError
     
 #################################
 # possible activation modules
 #################
 class Sigmoid(Module,MLUtilities):
-    def __init__(self):
-        self.net_type = 'class'
-        
+    net_type = 'class'
+    
     def forward(self,Z):
         self.A = 1/(1+np.exp(-Z))
         return self.A
@@ -318,9 +340,8 @@ class Sigmoid(Module,MLUtilities):
 
 #################
 class Tanh(Module,MLUtilities):
-    def __init__(self):
-        self.net_type = 'reg'
-        
+    net_type = 'reg'
+    
     def forward(self,Z):
         self.A = np.tanh(Z)
         return self.A
@@ -335,9 +356,8 @@ class Tanh(Module,MLUtilities):
 
 #################
 class ReLU(Module,MLUtilities):
-    def __init__(self):
-        self.net_type = 'reg'
-        
+    net_type = 'reg'
+    
     def forward(self,Z):
         self.A = np.maximum(0.0,Z)
         return self.A
@@ -354,9 +374,8 @@ class ReLU(Module,MLUtilities):
 
 #################
 class Identity(Module,MLUtilities):
-    def __init__(self):
-        self.net_type = 'reg'
-        
+    net_type = 'reg'
+    
     def forward(self,Z):
         self.A = Z.copy()
         return self.A
@@ -370,9 +389,8 @@ class Identity(Module,MLUtilities):
 
 #################
 class SoftMax(Module,MLUtilities):
-    def __init__(self):
-        self.net_type = 'class'
-        
+    net_type = 'class'
+    
     def forward(self,Z):
         exp_z = np.exp(Z) # (K,n_{sample})
         self.A = exp_z/np.sum(exp_z,axis=0)
@@ -393,9 +411,11 @@ class SoftMax(Module,MLUtilities):
 # possible normalizations
 #################
 class DropNorm(Module,MLUtilities):
-    def __init__(self,p_drop=0.2,rng=None):
+    def __init__(self,layer=1,p_drop=0.2,rng=None):
+        self.layer = layer # for compatibility with weighted modules
         self.p_drop = p_drop
         self.rng = np.random.RandomState() if rng is None else rng
+        self.layer = layer # useful for tracking save/read filenames        
 
     def drop_fun(self,A):
         u = self.rng.rand(A.shape[0],A.shape[1])
@@ -415,12 +435,13 @@ class DropNorm(Module,MLUtilities):
 #################################
 class BatchNorm(Module,MLUtilities):
     # structure courtesy MIT-OLL IntroML Course
-    def __init__(self,n_this,rng=None):
+    def __init__(self,n_this,layer=1,rng=None):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
         self.eps = 1e-15
-        self.G = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1)
-        self.B = np.zeros((n_this,1))#rng.randn(n_this,1) # (n_this,1)
+        self.W = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1); called G in MIT-OLL course
+        self.W0 = rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
+        self.layer = layer # useful for tracking save/read filenames        
 
     def forward(self,A):
         self.A = A
@@ -433,11 +454,11 @@ class BatchNorm(Module,MLUtilities):
         self.A_min_mu = self.A-self.mus
         self.norm = self.A_min_mu/self.std_inv # normalised version of input
 
-        return self.G*self.norm + self.B # scaled, shifted output
+        return self.W*self.norm + self.W0 # scaled, shifted output
 
     def backward(self,dLdA):
         # dLdX_{ij} = dLdA_{ij}*G_i/(sig_i+eps)*[1 - (1/K)sum_q dLdA_{iq} - 1/(sig_i+eps)(1/K)sum_q dLdA_{iq}(A_{iq}-mu_i)(A_{ij}-mu_i)]
-        dLdnorm = dLdA*self.G*self.std_inv # (n_this,K) * (n_this,1) = (n_this,K)
+        dLdnorm = dLdA*self.W*self.std_inv # (n_this,K) * (n_this,1) = (n_this,K)
         dLdX = dLdnorm.copy() # first term
         dLdX -= np.mean(dLdnorm,axis=1,keepdims=True) # second term
         dLdX -= self.std_inv*self.A_min_mu*np.mean(dLdnorm*self.A_min_mu,axis=1,keepdims=True)
@@ -449,9 +470,25 @@ class BatchNorm(Module,MLUtilities):
 
     def sgd_step(self,t,lrate):
         # adam support might be critical
-        self.B -= lrate*self.dLdB
-        self.G -= lrate*self.dLdG
+        self.W0 -= lrate*self.dLdB
+        self.W -= lrate*self.dLdG
         return 
+
+    def save(self):
+        """ Save current weights to file(s). """
+        file_W = self.file_stem + '_W.txt'
+        file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
+        np.savetxt(file_W,self.W,fmt='%.10e')
+        np.savetxt(file_W0,self.W0,fmt='%.10e')
+        return    
+
+    def read(self):
+        """ Read weights from file(s). """
+        file_W = self.file_stem + '_W.txt'
+        file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
+        self.W = self.cv(np.loadtxt(file_W))
+        self.W0 = self.cv(np.loadtxt(file_W0))
+        return
 #################################
     
 #################################
@@ -517,11 +554,15 @@ class Hinge(Module,MLUtilities):
 # Linear module
 #################
 class Linear(Module,MLUtilities):
-    def __init__(self,n_this,n_next,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
+    def __init__(self,n_this,n_next,layer=1,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
         self.rng = np.random.RandomState() if rng is None else rng
         
         # input,output sizes
         self.n_this,self.n_next = (n_this,n_next)
+
+        self.layer = layer # useful for tracking save/read filenames
+
+        # adam support
         self.adam = adam
         self.B1_adam = B1_adam
         self.B2_adam = B2_adam
@@ -534,8 +575,8 @@ class Linear(Module,MLUtilities):
             self.M = np.zeros_like(self.W)
             self.M0 = np.zeros_like(self.W0)
             self.V = np.zeros_like(self.W)
-            self.V0 = np.zeros_like(self.W0)
-            
+            self.V0 = np.zeros_like(self.W0)            
+        
     def forward(self,A):
         self.A = A # (n_this,b) where b = batch size
         Z = np.dot(self.W.T,self.A) + self.W0 # (n_next,b)
@@ -568,6 +609,27 @@ class Linear(Module,MLUtilities):
         self.W = self.W - lrate*dW
         self.W0 = self.W0 - lrate*dW0
         return 
+
+    def save(self):
+        """ Save current weights to file(s). """
+        file_W = self.file_stem + '_W.txt'
+        file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
+        np.savetxt(file_W,self.W,fmt='%.10e')
+        np.savetxt(file_W0,self.W0,fmt='%.10e')
+        return    
+
+    def read(self):
+        """ Read weights from file(s). """
+        file_W = self.file_stem + '_W.txt'
+        file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
+        self.W = np.loadtxt(file_W)
+        self.W0 = np.loadtxt(file_W0)
+        if self.n_next == 1:
+            self.W = self.cv(self.W)
+            self.W0 = self.rv([self.W0])
+        else:
+            self.W0 = self.cv(self.W0)
+        return
 #################################
 
 
@@ -595,6 +657,7 @@ class Sequential(Module,MLUtilities,Utilities):
                                  Only used if 'reg_fun' = 'drop'.
                                  Default value 0.5, but not clear if this is a good choice.
             -- params['seed']: int, random number seed.
+            -- params['file_stem']: str, common stem for generating filenames for saving (should include full path).
             -- params['verbose']: boolean, whether of not to print output (default True).
             -- params['logfile']: None or str, file into which to print output (default None, print to stdout)
 
@@ -611,6 +674,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.0)
         self.seed = params.get('seed',None)
+        self.file_stem = params.get('file_stem','net')
         self.verbose = params.get('verbose',True)
         self.logfile = params.get('logfile',None)
         
@@ -621,24 +685,24 @@ class Sequential(Module,MLUtilities,Utilities):
         
         self.check_init()
 
-        mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam)]
+        mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam,layer=1)]
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
-                mod.append(ReLU())
+                mod.append(ReLU(layer=l+1))
             elif self.atypes[l-1] == 'tanh':
-                mod.append(Tanh())
+                mod.append(Tanh(layer=l+1))
             elif self.atypes[l-1] == 'sigm':
-                mod.append(Sigmoid())
+                mod.append(Sigmoid(layer=l+1))
             elif self.atypes[l-1] == 'lin':
-                mod.append(Identity())
+                mod.append(Identity(layer=l+1))
             elif self.atypes[l-1] == 'sm':
-                mod.append(SoftMax())
+                mod.append(SoftMax(layer=l+1))
             if l < self.L:
                 if self.reg_fun == 'drop':
-                    mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng))
+                    mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng,layer=l+1))
                 elif self.reg_fun == 'bn':
-                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng))
-                mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam))
+                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng,layer=l+1))
+                mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam,layer=l+1))
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -794,6 +858,20 @@ class Sequential(Module,MLUtilities,Utilities):
             # convert 0 to -1 if needed.
             Ypred[Ypred == 0.0] = -1.0
         return Ypred
+
+    def save(self):
+        """ Save current weights to file(s). """
+        for m in self.modules:
+            m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
+            m.save()
+        return    
+
+    def read(self):
+        """ Read weights from file(s). """
+        for m in self.modules:
+            m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
+            m.read()
+        return
         
 #################################
 
@@ -805,7 +883,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,
                  min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_loss=True,
-                 seed=None,verbose=True,logfile=None):
+                 seed=None,file_stem='net',verbose=True,logfile=None):
         self.X = X
         self.Y = Y
         self.train_frac = train_frac
@@ -816,6 +894,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.loss_type = loss_type
         self.neg_loss = neg_loss # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.seed = seed
+        self.file_stem = file_stem
         self.verbose = verbose
         self.logfile = logfile
 
@@ -893,7 +972,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         lrates = np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
-                'verbose':False,'logfile':self.logfile,'neg_loss':self.neg_loss}
+                'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_loss':self.neg_loss}
         ptrn = {}
 
         net = None
@@ -935,6 +1014,8 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
                                         mean_test_loss = 1.0*mean_test_loss_this
+                                        # save network to file
+                                        net.save()
 
                                     if mean_test_loss <= self.target_test_loss:
                                         if self.verbose:
