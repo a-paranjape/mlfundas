@@ -1014,7 +1014,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
                                         mean_test_loss = 1.0*mean_test_loss_this
-                                        # save network to file
+                                        # save current best network to file
                                         net.save()
 
                                     if mean_test_loss <= self.target_test_loss:
