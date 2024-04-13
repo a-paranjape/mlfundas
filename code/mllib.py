@@ -1026,8 +1026,9 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
                                         mean_test_loss = 1.0*mean_test_loss_this
-                                        # save current best network (weights and setup dict) to file
+                                        # save current best network (weights and setup + train dicts) to file
                                         net.save()
+                                        self.save_train(params_train)
 
                                     if mean_test_loss <= self.target_test_loss:
                                         if self.verbose:
@@ -1040,6 +1041,17 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         # return last stored network, training params and mean test loss
         return net,params_train,mean_test_loss
+
+    def save_train(self,params_train):
+        """ Save training params to file. """
+        with open(self.file_stem + '_train.pkl', 'wb') as f:
+            pickle.dump(params_train,f)
+
+    def load_train(self):
+        """ Load training params from file. """
+        with open(self.file_stem + '_train.pkl', 'rb') as f:
+            params_train = pickle.load(f)
+        return params_train
 
     def load(self):
         """ Load existing network. """
