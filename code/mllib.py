@@ -894,7 +894,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,
-                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_loss=True,
+                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         self.X = X
         self.Y = Y
@@ -904,7 +904,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
         self.target_test_loss = target_test_loss
         self.loss_type = loss_type
-        self.neg_loss = neg_loss # in case of classification, are labels {-1,1} (True) or {0,1} (False)
+        self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.seed = seed
         self.file_stem = file_stem
         self.verbose = verbose
@@ -984,7 +984,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         lrates = np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
-                'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_loss':self.neg_loss}
+                'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {}
 
         net = None
