@@ -119,6 +119,10 @@ class Evaluate(MLUtilities,Utilities):
             X_minus_j = np.concatenate(X_split[:j]+X_split[j+1:],axis=1)
             Y_minus_j = np.concatenate(Y_split[:j]+Y_split[j+1:],axis=1)
             perc[j] = self.eval_classifier(learner,X_minus_j,Y_minus_j,X_split[j],Y_split[j],params=params)
+            if self.verbose:
+                self.status_bar(j,k)
+        if self.verbose:
+            self.print_this('... done',self.logfile)
         return perc.mean(),perc.std()/np.sqrt(k-1 + 1e-8)
     
     ##################################################
