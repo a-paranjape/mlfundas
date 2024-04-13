@@ -507,7 +507,7 @@ class NLL(Module,MLUtilities):
         self.Y = Y
         self.Y[self.Y < 0] = 0.0 # ensure only 0 or 1 passed as Y
         self.Ypred[self.Ypred < 0] = 0.0 # ensure only 0 or 1 passed as Ypred
-        Loss = -Y*np.log(Ypred) - (1-Y)*np.log(1-Ypred)
+        Loss = -Y*np.log(Ypred + 1e-15) - (1-Y)*np.log(1-Ypred + 1e-15)
         return np.sum(Loss) # scalar
 
     def backward(self):
@@ -520,7 +520,7 @@ class NLLM(Module,MLUtilities):
     def forward(self,Ypred,Y):
         self.Ypred = Ypred # (n_last,b), no check.
         self.Y = Y # no check. user must ensure only integers 0..K-1 passed for K categories
-        Loss = np.sum(-Y*np.log(Ypred),axis=0,keepdims=True) # (1,b)
+        Loss = np.sum(-Y*np.log(Ypred + 1e-15),axis=0,keepdims=True) # (1,b)
         return np.sum(Loss) # (1,1)
 
     def backward(self):
@@ -974,10 +974,10 @@ class BuildNN(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this("Initiating search... ",self.logfile)
 
-        if self.loss_type == 'square':
+        if self.loss_type in ['square','hinge']:
             last_atypes = ['lin','tanh','sigm']
-        elif self.loss_type in ['hinge','nll']:
-            last_atypes = ['sigm','tanh','lin'] if self.loss_type == 'hinge' else ['sigm','tanh']
+        elif self.loss_type == 'nll':
+            last_atypes = ['sigm','tanh']
         elif self.loss_type == 'nllm':
             last_atypes = ['sm']
         else:
@@ -1026,7 +1026,6 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
                                     Ypred_this = net_this.predict(self.X_test)
                                     mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
-                                    print(mean_test_loss_this)
                                     if mean_test_loss_this < mean_test_loss:
                                         # store the current best network
                                         net = copy.deepcopy(net_this)
