@@ -1021,7 +1021,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                             pset['reg_fun'] = rf
                             for last_atype in last_atypes:
                                 for htype in hidden_atypes:
-                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + pset['atypes']
+                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
                                     Ypred_this = net_this.predict(self.X_test)
