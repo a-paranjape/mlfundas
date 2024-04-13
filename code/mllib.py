@@ -339,7 +339,7 @@ class Sigmoid(Module,MLUtilities):
     
     def predict(self):
         out = np.zeros_like(self.A)
-        out[out > 0.5] = 1.0
+        out[self.A > 0.5] = 1.0
         return out
 #################
 
