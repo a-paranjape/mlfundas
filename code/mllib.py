@@ -974,9 +974,9 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("Initiating search... ",self.logfile)
 
         last_atypes = ['lin','tanh','sigm'] if self.loss_type == 'square' else ['sigm','tanh','sm','lin']
-        hidden_atypes = ['tanh','relu']
         reg_funs = ['none']#,'bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
+        hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
         max_epochs = np.array([300,1000,3000]) 
         # max_epochs = max_epochs.astype(int)
         # max_epochs[max_epochs > 3333] = 3333 # hard upper bound for now. 
@@ -1012,7 +1012,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                             pset['reg_fun'] = rf
                             for last_atype in last_atypes:
                                 for htype in hidden_atypes:
-                                    pset['atypes'] = [htype]*(L-1) + [last_atype]                                
+                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + pset['atypes']
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
                                     Ypred_this = net_this.predict(self.X_test)
