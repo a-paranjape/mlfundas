@@ -912,7 +912,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.logfile = logfile
 
         if self.verbose:
-            self.print_this("Building feed-forward neural network...",self.logfile)
+            self.print_this("Feed-forward neural network setup...",self.logfile)
         
         self.check_input()
 
