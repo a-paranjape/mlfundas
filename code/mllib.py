@@ -870,14 +870,14 @@ class Sequential(Module,MLUtilities,Utilities):
             
         return    
 
-    # not very useful for params dict, since dependent attributes not updated
-    # better to use load method of BuildNN().
+    # to be called after generating instance of Sequential() with correct setup params,
+    # e.g. after call to load method of BuildNN().
     def load(self):
         """ Load weights and setup params from file(s). """
         for m in self.modules:
             m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
             m.load()
-        with open(self.file_stem + '.pkl', 'wb') as f:
+        with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
         return
         
@@ -1041,7 +1041,9 @@ class BuildNN(Module,MLUtilities,Utilities):
         """ Load existing network. """
         with open(self.file_stem + '.pkl', 'rb') as f:
             params_setup = pickle.load(f)
-        return Sequential(params=params_setup)
+        net = Sequential(params=params_setup)
+        net.load()
+        return net
 #################################
 
 
