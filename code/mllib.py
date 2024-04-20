@@ -811,6 +811,7 @@ class Sequential(Module,MLUtilities,Utilities):
         max_epoch = params.get('max_epoch',100)
         lrate = params.get('lrate',0.005)
         mb_count = params.get('mb_count',1)
+        val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
         
         if self.verbose:
             self.print_this("... training",self.logfile)
@@ -825,6 +826,18 @@ class Sequential(Module,MLUtilities,Utilities):
         if Y.shape[1] != n_samp:
             raise TypeError("Incompatible n_samp in data and target in Sequential.sgd().")
 
+        n_val = np.rint(val_frac*n_samp).astype(int)
+        n_samp -= n_val        
+
+        ind_val = self.rng.choice(Y.shape[1],size=n_val,replace=False)
+        ind_train = np.delete(np.arange(Y.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+
+        X_train = X[:,ind_train].copy()
+        Y_train = Y[:,ind_train].copy()
+
+        X_val = X[:,ind_val].copy()
+        Y_val = Y[:,ind_val].copy()
+        
         if (mb_count > n_samp) | (mb_count < 1):
             if self.verbose:
                 self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp (standard SGD).",self.logfile)
@@ -840,12 +853,13 @@ class Sequential(Module,MLUtilities,Utilities):
 
         self.epochs = np.arange(max_epoch)+1.0
         self.epoch_loss = np.zeros(max_epoch)
+        self.val_loss = np.zeros(max_epoch)
         ind_shuff = np.arange(n_samp)
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
             for b in range(mb_count):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
-                data,target = X[:,sl].copy(),Y[:,sl].copy()
+                data,target = X_train[:,sl].copy(),Y_train[:,sl].copy()
 
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
@@ -857,6 +871,14 @@ class Sequential(Module,MLUtilities,Utilities):
                 # self.backward skips last activation, since loss.backward gives last dLdZ
 
                 self.sgd_step(t,lrate) # gradient descent update
+
+            # validation check
+            Ypred_val = self.forward(X_val) # update activations. prediction for validation data
+            self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
+            if t > 1:
+                if (self.val_loss[t] > self.val_loss[t-1]) & (self.val_loss[t-1] > self.val_loss[t-2]):
+                    break
+            
             if self.verbose:
                 self.status_bar(t,max_epoch)
 
@@ -917,11 +939,12 @@ class Sequential(Module,MLUtilities,Utilities):
 #################
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
-    def __init__(self,X=None,Y=None,train_frac=0.5,
+    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,
                  min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         self.X = X
         self.Y = Y
+        self.val_frac = val_frac
         self.train_frac = train_frac
         self.min_layer = min_layer # min no. of layers
         self.max_layer = max_layer # max no. of layers
@@ -1017,7 +1040,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {}
+        ptrn = {'val_frac':self.val_frac}
 
         net = None
         params_setup = None
