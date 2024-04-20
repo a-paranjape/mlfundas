@@ -878,7 +878,7 @@ class Sequential(Module,MLUtilities,Utilities):
             if t > 10:
                 if (self.val_loss[t] > self.val_loss[t-5]) & (self.val_loss[t-5] > self.val_loss[t-10]):
                     if self.verbose:
-                        self.print_this('\n',self.logfile)
+                        self.print_this('',self.logfile)
                     break
             
             if self.verbose:
