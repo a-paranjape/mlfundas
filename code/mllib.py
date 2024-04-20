@@ -875,8 +875,10 @@ class Sequential(Module,MLUtilities,Utilities):
             # validation check
             Ypred_val = self.forward(X_val) # update activations. prediction for validation data
             self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
-            if t > 1:
-                if (self.val_loss[t] > self.val_loss[t-1]) & (self.val_loss[t-1] > self.val_loss[t-2]):
+            if t > 10:
+                if (self.val_loss[t] > self.val_loss[t-5]) & (self.val_loss[t-5] > self.val_loss[t-10]):
+                    if self.verbose:
+                        self.print_this('\n',self.logfile)
                     break
             
             if self.verbose:
