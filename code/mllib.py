@@ -649,8 +649,14 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['data_dim']: int, input data dimension
             -- params['L']: int, L >= 1, number of layers
             -- params['n_layer']: list of L int, number of units in each layer. ** must have n_layer[-1] = y.shape[0] **
-            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin']
-            -- params['loss_type']: str, loss function in ['square','hinge','nll','nllm']
+            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+                                 If 'custom...', then also define dictionary params['custom_atypes']
+            -- params['custom_atypes']: dictionary with keys matching 'custom...' entry in params['atypes']
+                                        with items being activation module instances.
+            -- params['loss_type']: str, loss function in ['square','hinge','nll','nllm'] or 'custom...'.
+                                    If 'custom...', then also define dictionary params['custom_loss']
+            -- params['custom_loss']: dictionary with keys matching 'custom...' entry in params['loss_type']
+                                      with items being loss module instances.
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
             ** Note that last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
@@ -674,7 +680,9 @@ class Sequential(Module,MLUtilities,Utilities):
         self.L = params.get('L',1)
         self.n_layer = params.get('n_layer',[1]) # last n_layer should be compatible with y.shape
         self.atypes = params.get('atypes',['sigm']) # default assumes classification problem
+        self.custom_atypes = params.get('custom_atypes',None) 
         self.loss_type = params.get('loss_type','nll') # loss and last atype must be consistent
+        self.custom_loss = params.get('custom_loss',None) 
         self.neg_labels = params.get('neg_labels',True)
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
@@ -703,6 +711,9 @@ class Sequential(Module,MLUtilities,Utilities):
                 mod.append(Identity(layer=l+1))
             elif self.atypes[l-1] == 'sm':
                 mod.append(SoftMax(layer=l+1))
+            elif self.atypes[l-1][:6] == 'custom':
+                mod.append(self.custom_atypes[self.atypes[l-1]])
+                
             if l < self.L:
                 if self.reg_fun == 'drop':
                     mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng,layer=l+1))
@@ -758,8 +769,21 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose & (self.atypes[-1] != 'sm'):
                 self.print_this("Warning: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
+        elif self.loss_type[:6] == 'custom':
+            if self.custom_loss is None:
+                raise ValueError("Need to define dictionary custom_loss with keys containing "+self.loss_type)
+            if self.loss_type not in list(self.custom_loss.keys()):
+                raise ValueError("custom_loss keys must contain "+self.loss_type)
+            self.loss = self.custom_loss[self.loss_type]
         else:
-            raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in Sequential().")
+            raise ValueError("loss must be one of ['square','hinge','nll','nllm'] or 'custom...' in Sequential().")
+
+        for l in range(self.L):
+            if self.atypes[l][:6] == 'custom':
+                if self.custom_atypes is None:
+                    raise ValueError("Need to define dictionary custom_atypes with keys containing "+self.atypes[l])
+                if self.atypes[l] not in list(self.custom_atypes.keys()):
+                    raise ValueError("custom_loss keys must contain "+self.atypes[l])
 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
