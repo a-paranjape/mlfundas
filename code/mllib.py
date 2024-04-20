@@ -658,9 +658,8 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['custom_loss']: dictionary with keys matching 'custom...' entry in params['loss_type']
                                       with items being loss module instances.
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
-            ** Note that last entry in 'atypes' must be consistent with 'loss' **
+            ** Note that, ideally, last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
-            ** loss type will take precedence in case of inconsistency **
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
