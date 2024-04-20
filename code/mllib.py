@@ -812,6 +812,7 @@ class Sequential(Module,MLUtilities,Utilities):
         lrate = params.get('lrate',0.005)
         mb_count = params.get('mb_count',1)
         val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
+        check_after = params.get('check_after',10)
         
         if self.verbose:
             self.print_this("... training",self.logfile)
@@ -875,8 +876,10 @@ class Sequential(Module,MLUtilities,Utilities):
             # validation check
             Ypred_val = self.forward(X_val) # update activations. prediction for validation data
             self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
-            if t > 10:
-                if (self.val_loss[t] > self.val_loss[t-5]) & (self.val_loss[t-5] > self.val_loss[t-10]):
+            if t > check_after:
+                chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
+                chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
+                if chk_half & chk:
                     if self.verbose:
                         self.print_this('',self.logfile)
                     break
