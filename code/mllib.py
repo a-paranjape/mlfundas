@@ -858,9 +858,12 @@ class Sequential(Module,MLUtilities,Utilities):
         ind_shuff = np.arange(n_samp)
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
+            # missed below 2 lines earlier!
+            X_train_shuff = X_train[:,ind_shuff].copy()
+            Y_train_shuff = Y_train[:,ind_shuff].copy()
             for b in range(mb_count):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
-                data,target = X_train[:,sl].copy(),Y_train[:,sl].copy()
+                data,target = X_train_shuff[:,sl].copy(),Y_train_shuff[:,sl].copy()
 
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
