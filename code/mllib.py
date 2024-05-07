@@ -1127,7 +1127,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                 if mean_test_loss <= self.target_test_loss:
                                     if self.verbose:
                                         self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                    return net,params_setup,params_train,mean_test_loss
+                                    return net,params_train,mean_test_loss
 
                                 if self.verbose:
                                     self.status_bar(cnt,cnt_max)
