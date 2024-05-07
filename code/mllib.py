@@ -1040,7 +1040,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         reg_funs = ['none']#,'bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
-        max_epoch = 10000 # validation check is active
+        max_epoch = 5000 # validation check is active
         mb_count = 10 #(10 if mep < 10000 else 5)
         lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
         
