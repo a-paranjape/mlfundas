@@ -304,7 +304,8 @@ class Module(object):
         self.W0 = None
         
         # for saving / reading. will be dynamically modified.
-        self.file_stem = 'net' 
+        self.file_stem = 'net'
+        self.is_norm = False # helps identify normalization modules
     
     # these methods do nothing for modules without weights    
     def sgd_step(self,t,lrate):
@@ -420,7 +421,8 @@ class DropNorm(Module,MLUtilities):
         self.layer = layer # for compatibility with weighted modules
         self.p_drop = p_drop
         self.rng = np.random.RandomState() if rng is None else rng
-        self.layer = layer # useful for tracking save/read filenames        
+        self.layer = layer # useful for tracking save/read filenames
+        self.is_norm = True
 
     def drop_fun(self,A):
         u = self.rng.rand(A.shape[0],A.shape[1])
@@ -447,6 +449,7 @@ class BatchNorm(Module,MLUtilities):
         self.W = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1); called G in MIT-OLL course
         self.W0 = rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
         self.layer = layer # useful for tracking save/read filenames        
+        self.is_norm = True
 
     def forward(self,A):
         self.A = A
@@ -567,6 +570,7 @@ class Linear(Module,MLUtilities):
         self.n_this,self.n_next = (n_this,n_next)
 
         self.layer = layer # useful for tracking save/read filenames
+        self.is_norm = False
 
         # adam support
         self.adam = adam
@@ -921,7 +925,10 @@ class Sequential(Module,MLUtilities,Utilities):
     def save(self):
         """ Save current weights and setup params to file(s). """
         for m in self.modules:
-            m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
+            m.file_stem = self.file_stem
+            if m.is_norm:
+                m.file_stem += '_norm'
+            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
         with open(self.file_stem + '.pkl', 'wb') as f:
             pickle.dump(self.params,f)
@@ -929,11 +936,14 @@ class Sequential(Module,MLUtilities,Utilities):
         return    
 
     # to be called after generating instance of Sequential() with correct setup params,
-    # e.g. after call to load method of BuildNN().
+    # e.g. after invoking self.save() or after call to load method of BuildNN().
     def load(self):
         """ Load weights and setup params from file(s). """
         for m in self.modules:
-            m.file_stem = self.file_stem + '_layer{0:d}'.format(m.layer)
+            m.file_stem = self.file_stem
+            if m.is_norm:
+                m.file_stem += '_norm'
+            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.load()
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
