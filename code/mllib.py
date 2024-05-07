@@ -442,7 +442,7 @@ class DropNorm(Module,MLUtilities):
 #################################
 class BatchNorm(Module,MLUtilities):
     # structure courtesy MIT-OLL IntroML Course
-    def __init__(self,n_this,layer=1,rng=None):
+    def __init__(self,n_this,layer=1,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
         self.eps = 1e-15
@@ -450,6 +450,18 @@ class BatchNorm(Module,MLUtilities):
         self.W0 = rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
         self.layer = layer # useful for tracking save/read filenames        
         self.is_norm = True
+
+        # adam support
+        self.adam = adam
+        self.B1_adam = B1_adam
+        self.B2_adam = B2_adam
+        self.eps_adam = eps_adam
+        
+        if self.adam:
+            self.M = np.zeros_like(self.W)
+            self.M0 = np.zeros_like(self.W0)
+            self.V = np.zeros_like(self.W)
+            self.V0 = np.zeros_like(self.W0)            
 
     def forward(self,A):
         self.A = A
@@ -471,15 +483,21 @@ class BatchNorm(Module,MLUtilities):
         dLdX -= np.mean(dLdnorm,axis=1,keepdims=True) # second term
         dLdX -= self.std_inv*self.A_min_mu*np.mean(dLdnorm*self.A_min_mu,axis=1,keepdims=True)
 
-        self.dLdB = np.sum(dLdA,axis=1,keepdims=True)
-        self.dLdG = np.sum(dLdA*self.norm,axis=1,keepdims=True)
+        self.dLdW0 = np.sum(dLdA,axis=1,keepdims=True)
+        self.dLdW = np.sum(dLdA*self.norm,axis=1,keepdims=True)
+        
+        if self.adam:
+            self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
+            self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdW**2
+            self.M0 = self.B1_adam*self.M0 + (1-self.B1_adam)*self.dLdW0
+            self.V0 = self.B2_adam*self.V0 + (1-self.B2_adam)*self.dLdW0**2
 
         return dLdX
 
     def sgd_step(self,t,lrate):
         # adam support might be critical
-        self.W0 -= lrate*self.dLdB
-        self.W -= lrate*self.dLdG
+        self.W0 -= lrate*self.dLdW0
+        self.W -= lrate*self.dLdW
         return 
 
     def save(self):
@@ -721,7 +739,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 if self.reg_fun == 'drop':
                     mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng,layer=l+1))
                 elif self.reg_fun == 'bn':
-                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng,layer=l+1))
+                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng,adam=self.adam,layer=l+1))
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam,layer=l+1))
                 
         if self.verbose:
