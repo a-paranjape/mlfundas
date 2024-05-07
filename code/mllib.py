@@ -1047,7 +1047,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        reg_funs = ['none','bn']
+        reg_funs = ['bn'] # ['none','bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
         max_epoch = 5000 # validation check is active
