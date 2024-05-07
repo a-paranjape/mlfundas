@@ -1081,7 +1081,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'val_frac':self.val_frac,'check_after':20}
+        ptrn = {'val_frac':self.val_frac,'check_after':250}
 
         net = None
         params_setup = None
