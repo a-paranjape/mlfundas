@@ -495,9 +495,16 @@ class BatchNorm(Module,MLUtilities):
         return dLdX
 
     def sgd_step(self,t,lrate):
-        # adam support might be critical
-        self.W0 -= lrate*self.dLdW0
-        self.W -= lrate*self.dLdW
+        if self.adam:
+            corr_B1 = 1-self.B1_adam**(1+t) 
+            corr_B2 = 1-self.B2_adam**(1+t)
+            dW = self.M/corr_B1/np.sqrt(self.V/corr_B2 + self.eps_adam)
+            dW0 = self.M0/corr_B1/np.sqrt(self.V0/corr_B2 + self.eps_adam)
+        else:
+            dW = self.dLdW
+            dW0 = self.dLdW0
+        self.W -= lrate*dW
+        self.W0 -= lrate*dW0
         return 
 
     def save(self):
@@ -634,8 +641,8 @@ class Linear(Module,MLUtilities):
         else:
             dW = self.dLdW
             dW0 = self.dLdW0
-        self.W = self.W - lrate*dW
-        self.W0 = self.W0 - lrate*dW0
+        self.W -= lrate*dW
+        self.W0 -= lrate*dW0
         return 
 
     def save(self):
