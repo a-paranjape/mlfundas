@@ -1040,21 +1040,19 @@ class BuildNN(Module,MLUtilities,Utilities):
         reg_funs = ['none']#,'bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
-        max_epochs = np.array([300,1000,3000]) 
-        # max_epochs = max_epochs.astype(int)
-        # max_epochs[max_epochs > 3333] = 3333 # hard upper bound for now. 
-        mb_counts = lambda mep: 20 if mep < 1000 else 10 #(10 if mep < 10000 else 5)
-        lrates = np.array([0.001,0.003,0.01])
+        max_epoch = 10000 # validation check is active
+        mb_count = 10 #(10 if mep < 10000 else 5)
+        lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'val_frac':self.val_frac}
+        ptrn = {'val_frac':self.val_frac,'check_after':100}
 
         net = None
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*max_epochs.size*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = layers.size*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         mean_test_loss_this = 1e30
         mean_test_loss = 1e25
@@ -1063,44 +1061,42 @@ class BuildNN(Module,MLUtilities,Utilities):
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
-            # meps = np.array([max_epochs[ll]//3,max_epochs[ll],3*max_epochs[ll]])
-            for mep in max_epochs:
-                ptrn['max_epoch'] = mep
-                ptrn['mb_count'] = mb_counts(mep)
-                for lrate in lrates:
-                    ptrn['lrate'] = lrate
-                    for ex in range(self.max_ex+1): 
-                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                        for rf in reg_funs:
-                            pset['reg_fun'] = rf
-                            for last_atype in last_atypes:
-                                for htype in hidden_atypes:
-                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                    net_this = Sequential(params=pset)
-                                    net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    Ypred_this = net_this.predict(self.X_test)
-                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
-                                    if mean_test_loss_this < mean_test_loss:
-                                        # store the current best network
-                                        net = copy.deepcopy(net_this)
-                                        params_setup = copy.deepcopy(pset)
-                                        params_setup['verbose'] = self.verbose
-                                        net.verbose = self.verbose
-                                        params_train = copy.deepcopy(ptrn)
-                                        # record current best mean test loss
-                                        mean_test_loss = 1.0*mean_test_loss_this
-                                        # save current best network (weights and setup + train dicts) to file
-                                        net.save()
-                                        self.save_train(params_train)
+            ptrn['max_epoch'] = max_epoch
+            ptrn['mb_count'] = mb_count
+            for lrate in lrates:
+                ptrn['lrate'] = lrate
+                for ex in range(self.max_ex+1): 
+                    pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                    for rf in reg_funs:
+                        pset['reg_fun'] = rf
+                        for last_atype in last_atypes:
+                            for htype in hidden_atypes:
+                                pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+                                net_this = Sequential(params=pset)
+                                net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                Ypred_this = net_this.predict(self.X_test)
+                                mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                if mean_test_loss_this < mean_test_loss:
+                                    # store the current best network
+                                    net = copy.deepcopy(net_this)
+                                    params_setup = copy.deepcopy(pset)
+                                    params_setup['verbose'] = self.verbose
+                                    net.verbose = self.verbose
+                                    params_train = copy.deepcopy(ptrn)
+                                    # record current best mean test loss
+                                    mean_test_loss = 1.0*mean_test_loss_this
+                                    # save current best network (weights and setup + train dicts) to file
+                                    net.save()
+                                    self.save_train(params_train)
 
-                                    if mean_test_loss <= self.target_test_loss:
-                                        if self.verbose:
-                                            self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                        return net,params_setup,params_train,mean_test_loss
-
+                                if mean_test_loss <= self.target_test_loss:
                                     if self.verbose:
-                                        self.status_bar(cnt,cnt_max)
-                                    cnt += 1
+                                        self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                    return net,params_setup,params_train,mean_test_loss
+
+                                if self.verbose:
+                                    self.status_bar(cnt,cnt_max)
+                                cnt += 1
 
         # return last stored network, training params and mean test loss
         return net,params_train,mean_test_loss
