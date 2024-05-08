@@ -1111,6 +1111,8 @@ class BuildNN(Module,MLUtilities,Utilities):
                                 net_this.train(self.X_train,self.Y_train,params=ptrn)
                                 Ypred_this = net_this.predict(self.X_test)
                                 mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                if not np.isfinite(mean_test_loss_this):
+                                    mean_test_loss_this = 1e30
                                 if mean_test_loss_this < mean_test_loss:
                                     # store the current best network
                                     net = copy.deepcopy(net_this)
