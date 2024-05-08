@@ -1080,7 +1080,6 @@ class BuildNN(Module,MLUtilities,Utilities):
         """ Train various networks and select the one that minimizes test loss.
             Returns: 
             -- net: instance of Sequential 
-            -- params_setup: dictionary of parameters used for building net
             -- params_train: dictionary of parameters used for training net
             -- mean_test_loss: mean test loss using final network
         """
