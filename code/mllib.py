@@ -726,6 +726,8 @@ class Sequential(Module,MLUtilities,Utilities):
         
         self.Y_std = 1.0
         self.Y_mean = 0.0
+        self.params['Y_std'] = self.Y_std
+        self.params['Y_mean'] = self.Y_mean
         # will be reset by self.train() if self.standardize == True
 
         if self.verbose:
@@ -867,9 +869,6 @@ class Sequential(Module,MLUtilities,Utilities):
         if Y.shape[1] != n_samp:
             raise TypeError("Incompatible n_samp in data and target in Sequential.sgd().")
 
-        self.Y_std = np.std(Y,axis=1)
-        self.Y_mean = np.mean(Y,axis=1)
-
         n_val = np.rint(val_frac*n_samp).astype(int)
         n_samp -= n_val        
 
@@ -883,6 +882,10 @@ class Sequential(Module,MLUtilities,Utilities):
         Y_val = Y[:,ind_val].copy()
         
         if self.standardize:
+            self.Y_std = np.std(Y,axis=1)
+            self.Y_mean = np.mean(Y,axis=1)
+            self.params['Y_std'] = self.Y_std
+            self.params['Y_mean'] = self.Y_mean
             Y_train -= self.Y_mean
             Y_train /= (self.Y_std + 1e-15)
             Y_val -= self.Y_mean
@@ -996,6 +999,12 @@ class Sequential(Module,MLUtilities,Utilities):
             m.load()
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
+            
+        self.standardize = self.params['standardize']
+        if self.standardize:
+            self.Y_std = self.params['Y_std']
+            self.Y_mean = self.params['Y_mean']
+        
         return
         
 #################################
@@ -1133,7 +1142,11 @@ class BuildNN(Module,MLUtilities,Utilities):
                                 net_this = Sequential(params=pset)
                                 net_this.train(self.X_train,self.Y_train,params=ptrn)
                                 Ypred_this = net_this.predict(self.X_test)
-                                mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                if net_this.standardize:
+                                    # standardize test data
+                                    Ytest_this = self.Y_test - np.mean(self.Y_test,axis=1)
+                                    Ytest_this /= (np.std(self.Y_test,axis=1) + 1e-15)
+                                mean_test_loss_this = net_this.loss.forward(Ypred_this,Y_test_this)/self.n_test
                                 if not np.isfinite(mean_test_loss_this):
                                     mean_test_loss_this = 1e30
                                 if mean_test_loss_this < mean_test_loss:
