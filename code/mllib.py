@@ -715,7 +715,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.neg_labels = params.get('neg_labels',True)
         self.standardize = params.get('standardize',True)
         self.adam = params.get('adam',True)
-        self.reg_fun = params.get('reg_fun','bn')
+        self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.0)
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','net')
@@ -1104,7 +1104,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        reg_funs = ['bn'] # ['none','bn']
+        reg_funs = ['none'] # ['none','bn']
         layers = np.arange(self.min_layer,self.max_layer+1)
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
         max_epoch = 5000 # validation check is active
@@ -1113,7 +1113,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'val_frac':self.val_frac,'check_after':100}
+        ptrn = {'val_frac':self.val_frac,'check_after':20}
 
         net = None
         params_setup = None
@@ -1144,8 +1144,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                                 Ypred_this = net_this.predict(self.X_test)
                                 if net_this.standardize:
                                     # standardize test data
-                                    Ytest_this = self.Y_test - np.mean(self.Y_test,axis=1)
-                                    Ytest_this /= (np.std(self.Y_test,axis=1) + 1e-15)
+                                    Y_test_this = self.Y_test - np.mean(self.Y_test,axis=1)
+                                    Y_test_this /= (np.std(self.Y_test,axis=1) + 1e-15)
+                                else:
+                                    Y_test_this = self.Y_test.copy()
                                 mean_test_loss_this = net_this.loss.forward(Ypred_this,Y_test_this)/self.n_test
                                 if not np.isfinite(mean_test_loss_this):
                                     mean_test_loss_this = 1e30
