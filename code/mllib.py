@@ -689,10 +689,11 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
             ** Note that, ideally, last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
+            -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
-                                  If 'drop', then value of 'p_drop' must be specified. Default 'none'.
+                                  If 'drop', then value of 'p_drop' must be specified. Default 'bn'.
             -- params['p_drop']: float between 0 and 1, drop probability.
                                  Only used if 'reg_fun' = 'drop'.
                                  Default value 0.5, but not clear if this is a good choice.
@@ -712,8 +713,9 @@ class Sequential(Module,MLUtilities,Utilities):
         self.loss_type = params.get('loss_type','nll') # loss and last atype must be consistent
         self.custom_loss = params.get('custom_loss',None) 
         self.neg_labels = params.get('neg_labels',True)
+        self.standardize = params.get('standardize',True)
         self.adam = params.get('adam',True)
-        self.reg_fun = params.get('reg_fun','none')
+        self.reg_fun = params.get('reg_fun','bn')
         self.p_drop = params.get('p_drop',0.0)
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','net')
@@ -721,6 +723,10 @@ class Sequential(Module,MLUtilities,Utilities):
         self.logfile = params.get('logfile',None)
         
         self.rng = np.random.RandomState(self.seed)
+        
+        self.Y_std = 1.0
+        self.Y_mean = 0.0
+        # will be reset by self.train() if self.standardize == True
 
         if self.verbose:
             self.print_this("... setting up {0:d} layer feed-forward neural network".format(self.L),self.logfile)
@@ -806,6 +812,11 @@ class Sequential(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] or 'custom...' in Sequential().")
 
+        if self.standardize & (self.loss_type != 'square'):
+            if self.verbose:
+                self.print_this('Standardization incompatible with classification problems, switching off.',self.logfile)
+            self.standardize = False
+
         for l in range(self.L):
             if self.atypes[l][:6] == 'custom':
                 if self.custom_atypes is None:
@@ -856,6 +867,9 @@ class Sequential(Module,MLUtilities,Utilities):
         if Y.shape[1] != n_samp:
             raise TypeError("Incompatible n_samp in data and target in Sequential.sgd().")
 
+        self.Y_std = np.std(Y,axis=1)
+        self.Y_mean = np.mean(Y,axis=1)
+
         n_val = np.rint(val_frac*n_samp).astype(int)
         n_samp -= n_val        
 
@@ -868,6 +882,12 @@ class Sequential(Module,MLUtilities,Utilities):
         X_val = X[:,ind_val].copy()
         Y_val = Y[:,ind_val].copy()
         
+        if self.standardize:
+            Y_train -= self.Y_mean
+            Y_train /= (self.Y_std + 1e-15)
+            Y_val -= self.Y_mean
+            Y_val /= (self.Y_std + 1e-15)
+            
         if (mb_count > n_samp) | (mb_count < 1):
             if self.verbose:
                 self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp (standard SGD).",self.logfile)
@@ -942,6 +962,10 @@ class Sequential(Module,MLUtilities,Utilities):
         # modify last activation into labels if needed.
         # if labels, these will always be non-negative
         Ypred = self.modules[-1].predict()
+        if self.standardize:
+            # undo standardization
+            Ypred *= (self.Y_std + 1e-15)
+            Ypred += self.Y_mean
         if (self.net_type == 'class') & self.neg_labels:
             # convert 0 to -1 if needed.
             Ypred[Ypred == 0.0] = -1.0
