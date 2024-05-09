@@ -15,6 +15,7 @@ class Perceptron(MLUtilities,Utilities):
                   or tuple with initial (th [shape (d,1)],th0 [shape (1,1)]).
             avg: whether to use standard or averaged perceptron (Default False, standard perceptron)
         """
+        Utilities.__init__(self)
         self.origin = origin
         self.verbose = verbose
         self.logfile = logfile
@@ -184,6 +185,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
             Provides forward, backward, sgd_step and sgd methods. Use sgd to train on given data set.
         """
+        Utilities.__init__(self)
         self.params = params
         self.n0 = params.get('data_dim',None)
         self.L = params.get('L',1)
@@ -498,6 +500,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,
                  min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,
                  seed=None,file_stem='net',verbose=True,logfile=None):
+        Utilities.__init__(self)
         self.X = X
         self.Y = Y
         self.val_frac = val_frac

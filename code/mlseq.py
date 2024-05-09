@@ -128,6 +128,7 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
             -- transition: dictionary of transition matrices, whose keys will be stored as self.actions
             -- reward: function object with call sign reward(state,action). Must be compatible with states and transition.
         """
+        Utilities.__init__(self)
         self.verbose = verbose
         self.logfile = logfile
         self.states = np.array(states)
