@@ -607,7 +607,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             reg_funs = ['none']
             max_epochs = [1500,3000] # full range will be used
             layers = np.array([2,3])
-            ptrn = {'check_after':np.max(max_epochs)+1}
+            ptrn = {'val_frac':0.01,'check_after':np.max(max_epochs)+1}
             lrates = np.array([0.001,0.005])
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
