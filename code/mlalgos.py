@@ -605,7 +605,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             ptrn = {'val_frac':self.val_frac,'check_after':20}
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            max_epochs = [2500,5000] # full range will be used
+            max_epochs = [1500,3000] # full range will be used
             layers = np.array([2,3])
             ptrn = {'check_after':np.max(max_epochs)+1}
             lrates = np.array([0.001,0.005])
@@ -640,13 +640,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
                                     Ypred_this = net_this.predict(self.X_test)
-                                    if net_this.standardize:
-                                        # standardize test data
-                                        Y_test_this = self.Y_test - np.mean(self.Y_test,axis=1)
-                                        Y_test_this /= (np.std(self.Y_test,axis=1) + 1e-15)
-                                    else:
-                                        Y_test_this = self.Y_test.copy()
-                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,Y_test_this)/self.n_test
+                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
                                     if not np.isfinite(mean_test_loss_this):
                                         mean_test_loss_this = 1e30
                                     if mean_test_loss_this < mean_test_loss:
