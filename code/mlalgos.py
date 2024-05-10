@@ -498,7 +498,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,
-                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,
+                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,arch_type=None,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
@@ -508,9 +508,11 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.min_layer = min_layer # min no. of layers
         self.max_layer = max_layer # max no. of layers
         self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
+        self.max_ex_vals = np.arange(max_ex+1) if np.isscalar(max_ex) else self.max_ex
         self.target_test_loss = target_test_loss
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
+        self.arch_type = arch_type # if not None, string describing architecture type to explore. currently accepts 'emulator'
         self.seed = seed
         self.file_stem = file_stem
         self.verbose = verbose
@@ -565,6 +567,10 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning: train_frac should be strictly between 0 and 1 in BuildNN(). Setting to 0.5")
             self.train_frac = 0.5
+
+        if self.arch_type is not None:
+            if self.arch_type not in ['emulator']:
+                raise ValueError("arch_type must be None or one of ['emulator'] in BuildNN.")
             
         return
 
@@ -587,22 +593,30 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        reg_funs = ['none'] # ['none','bn']
-        layers = np.arange(self.min_layer,self.max_layer+1)
-        hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
-        max_epoch = 5000 # validation check is active
         mb_count = 10 #(10 if mep < 10000 else 5)
-        lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'val_frac':self.val_frac,'check_after':20}
+        if self.arch_type is None:
+            reg_funs = ['none','bn']
+            max_epochs = [5000] # validation check is active
+            layers = np.arange(self.min_layer,self.max_layer+1)
+            lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
+            ptrn = {'val_frac':self.val_frac,'check_after':20}
+        elif self.arch_type == 'emulator':
+            reg_funs = ['none']
+            max_epochs = [2500,5000] # full range will be used
+            layers = np.array([2,3])
+            ptrn = {'check_after':np.max(max_epochs)+1}
+            lrates = np.array([0.001,0.005])
+            
+        hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
         net = None
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*len(reg_funs)*lrates.size*(self.max_ex+1)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = layers.size*len(max_epochs)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         mean_test_loss_this = 1e30
         mean_test_loss = 1e25
@@ -611,50 +625,51 @@ class BuildNN(Module,MLUtilities,Utilities):
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
-            ptrn['max_epoch'] = max_epoch
-            ptrn['mb_count'] = mb_count
-            for lrate in lrates:
-                ptrn['lrate'] = lrate
-                for ex in range(self.max_ex+1): 
-                    pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                    for rf in reg_funs:
-                        pset['reg_fun'] = rf
-                        for last_atype in last_atypes:
-                            for htype in hidden_atypes:
-                                pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                net_this = Sequential(params=pset)
-                                net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                Ypred_this = net_this.predict(self.X_test)
-                                if net_this.standardize:
-                                    # standardize test data
-                                    Y_test_this = self.Y_test - np.mean(self.Y_test,axis=1)
-                                    Y_test_this /= (np.std(self.Y_test,axis=1) + 1e-15)
-                                else:
-                                    Y_test_this = self.Y_test.copy()
-                                mean_test_loss_this = net_this.loss.forward(Ypred_this,Y_test_this)/self.n_test
-                                if not np.isfinite(mean_test_loss_this):
-                                    mean_test_loss_this = 1e30
-                                if mean_test_loss_this < mean_test_loss:
-                                    # store the current best network
-                                    net = copy.deepcopy(net_this)
-                                    params_setup = copy.deepcopy(pset)
-                                    params_setup['verbose'] = self.verbose
-                                    net.verbose = self.verbose
-                                    params_train = copy.deepcopy(ptrn)
-                                    # record current best mean test loss
-                                    mean_test_loss = 1.0*mean_test_loss_this
-                                    # save current best network (weights and setup + train dicts) to file
-                                    net.save()
-                                    self.save_train(params_train)
+            for mep in max_epochs:
+                ptrn['max_epoch'] = mep
+                ptrn['mb_count'] = mb_count
+                for lrate in lrates:
+                    ptrn['lrate'] = lrate
+                    for ex in self.max_ex_vals: 
+                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                        for rf in reg_funs:
+                            pset['reg_fun'] = rf
+                            for last_atype in last_atypes:
+                                for htype in hidden_atypes:
+                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+                                    net_this = Sequential(params=pset)
+                                    net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                    Ypred_this = net_this.predict(self.X_test)
+                                    if net_this.standardize:
+                                        # standardize test data
+                                        Y_test_this = self.Y_test - np.mean(self.Y_test,axis=1)
+                                        Y_test_this /= (np.std(self.Y_test,axis=1) + 1e-15)
+                                    else:
+                                        Y_test_this = self.Y_test.copy()
+                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,Y_test_this)/self.n_test
+                                    if not np.isfinite(mean_test_loss_this):
+                                        mean_test_loss_this = 1e30
+                                    if mean_test_loss_this < mean_test_loss:
+                                        # store the current best network
+                                        net = copy.deepcopy(net_this)
+                                        params_setup = copy.deepcopy(pset)
+                                        params_setup['verbose'] = self.verbose
+                                        net.verbose = self.verbose
+                                        params_train = copy.deepcopy(ptrn)
+                                        # record current best mean test loss
+                                        mean_test_loss = 1.0*mean_test_loss_this
+                                        # save current best network (weights and setup + train dicts) to file
+                                        net.save()
+                                        self.save_train(params_train)
 
-                                if mean_test_loss <= self.target_test_loss:
+                                    if mean_test_loss <= self.target_test_loss:
+                                        if self.verbose:
+                                            self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                        return net,params_train,mean_test_loss
+
                                     if self.verbose:
-                                        self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                    return net,params_train,mean_test_loss
-
-                                if self.verbose:
-                                    self.status_bar(cnt,cnt_max)
-                                cnt += 1
+                                        self.status_bar(cnt,cnt_max)
+                                    cnt += 1
 
         # return last stored network, training params and mean test loss
         return net,params_train,mean_test_loss
