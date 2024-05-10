@@ -595,7 +595,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         mb_count = 10 #(10 if mep < 10000 else 5)
         
-        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':True,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         if self.arch_type is None:
             reg_funs = ['none','bn']
@@ -605,7 +605,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             ptrn = {'val_frac':self.val_frac,'check_after':20}
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            max_epochs = [1500,3000] # full range will be used
+            max_epochs = [2000,5000] # full range will be used
             layers = np.array([2,3])
             ptrn = {'val_frac':0.01,'check_after':np.max(max_epochs)+1}
             lrates = np.array([0.001,0.005])
