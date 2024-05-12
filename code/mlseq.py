@@ -118,9 +118,9 @@ class RecurrentNeuralNetwork(StateMachine):
 #################################
 
 #################################
-# Markov Decision Process
+# Markov Decision Process (own code)
 #################
-class MarkovDecisionProcess(MLUtilities,Utilities):
+class My_MarkovDecisionProcess(MLUtilities,Utilities):
     """ Markov decision process. """
     def __init__(self,states,transition,reward,verbose=True,logfile=None):
         """ Markov decision process. 
@@ -172,16 +172,16 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
         """ Calculate (finite horizon) optimal action-value function Q^{h}(s,a) using value iteration.
             -- horizon: None or non-negative integer. 
                         If None (default), then calculate infinite-horizon result with discount gamma. 
-            -- gamma: discount value in (0,1). Set to 1 if horizon is finite integer.
+            -- gamma: discount value in (0,1). Expectimax search if horizon is finite integer.
             -- eps: small positive float, controls stopping criterion for infinite-horizon case. Only used if horizon is None.
             -- max_iter: maximum number of iterations
             Returns array of values of shape (len(self.actions),len(self.states)).
         """
-        if horizon is None:
-            if (gamma < 0.0) | (gamma > 1.0):
-                raise ValueError("Discount gamma should be between zero and unity for infinite-horizon value function.")
-        else:
-            gamma = 1.0
+        # if horizon is None:
+        if (gamma < 0.0) | (gamma > 1.0):
+            raise ValueError("Discount gamma should be between zero and unity.")
+        # else:
+        #     gamma = 1.0
         Q = np.zeros((len(self.actions),len(self.states)))
         
         if horizon == 0:
@@ -220,3 +220,121 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
         return np.vectorize(opt_pol)
         
 #################################
+
+# #################################
+# # (structure courtesy MIT-OLL MLIntro Course)
+# # Discrete distribution represented as a dictionary.  Can be
+# # sparse, in the sense that elements that are not explicitly
+# # contained in the dictionary are assumed to have zero probability.
+# #################
+# class DDist(object):
+#     """ Discrete distribution over states. """
+#     def __init__(self, dictionary,rng=None):
+#         # Initializes dictionary whose keys are elements of the domain
+#         # and values are their probabilities
+#         self.ddist = dictionary
+#         self.elts = list(self.ddist.keys())
+#         self.support = []
+#         for elt in self.elts:
+#             probab = self.prob(elt)
+#             if probab > 0.0:
+#                 self.support.append(elt)
+#         self.rng = rng if rng is not None else no.random.RandomState()
+
+#     def prob(self, elt):
+#         # Returns the probability associated with elt
+#         return self.ddist[elt]
+
+#     def support(self):
+#         # Returns a list (in any order) of the elements of this
+#         # distribution with non-zero probability.
+#         return self.support
+
+#     def draw(self):
+#         # Returns a randomly drawn element from the distribution
+#         u = self.rng.rand()
+#         for elt in self.elts:
+#             prob = self.ddist[elt]
+#             if u < prob:
+#                 return elt
+#             else:
+#                 u -= prob
+#         raise Exception('Failed to draw from '+ str(self))
+
+#     def expectation(self, f):
+#         # Returns the expected value of the function f over the current distribution
+#         return sum([self.ddist[elt]*f(elt) for elt in self.support])
+# #################################
+
+# #################################
+# def uniform_dist(elts):
+#     """
+#     Uniform distribution over a given finite set of C{elts}
+#     @param elts: list of any kind of item
+#     """
+#     p = 1.0 / len(elts)
+#     return DDist(dict([(e, p) for e in elts]))
+# #################################
+
+# #################################
+# # Markov Decision Process (concepts from MIT-OLL)
+# #################
+# class MarkovDecisionProcess(MLUtilities,Utilities):
+#     """ Markov decision process. """
+#     def __init__(self,states,actions,transition,reward,discount_factor=1.0,start_dist=None,verbose=True,logfile=None):
+#         """ Markov decision process. 
+#             -- states: list of possible states
+#             -- actions: list of possible actions
+#             -- transition: function from (state,action) into DDist over next state
+#             -- reward: function object with call sign reward(state,action). Must be compatible with states and transition.
+#             -- discount_factor: discount value in (0,1).
+#             -- start_dist: optional instance of DDist, specifying initial state dist.
+#                            If unspecified, set to uniform over states.
+#         """
+#         Utilities.__init__(self)
+#         self.verbose = verbose
+#         self.logfile = logfile
+#         self.states = states
+#         self.transition = transition
+#         self.actions = actions
+#         self.reward = reward
+#         self.start = start_dist if start_dist else uniform_dist(states)
+
+
+#     def terminal(self, s):
+#         """ Given a state, return True if the state should be considered to
+#             be terminal (generates an infinite sequence of zero reward). """
+#         return False
+
+#     def init_state(self):
+#         """ Return an initial state by drawing from the distribution over start states."""
+#         return self.start.draw()
+
+#     def sim_transition(self, s, a):
+#         """ Simulates a transition from the given state, s and action a, using the
+#             transition model as a probability distribution.  If s is terminal,
+#             use init_state to draw an initial state.  Returns (reward, new_state). """
+#         return (self.reward(s, a),
+#                 self.init_state() if self.terminal(s) else
+#                     self.transition_model(s, a).draw())
+
+# #################################
+
+# #################################
+# class TabularQ:
+#     def __init__(self, states, actions):
+#         self.actions = actions
+#         self.states = states
+#         self.q = dict([((s, a), 0.0) for s in states for a in actions])
+
+#     def copy(self):
+#         q_copy = TabularQ(self.states, self.actions)
+#         q_copy.q.update(self.q)
+#         return q_copy
+
+#     def set(self, s, a, v):
+#         self.q[(s,a)] = v
+
+#     def get(self, s, a):
+#         return self.q[(s,a)]
+# #################################
