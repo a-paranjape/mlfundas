@@ -594,7 +594,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
         mb_count = 10
-        max_epochs = 50000 # validation checks will be active
+        max_epoch = 50000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':True,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
