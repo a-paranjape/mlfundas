@@ -609,7 +609,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             reg_funs = ['none']
             layers = np.array([2,3])
             lrates = np.array([0.001,0.005])
-            check_after = [2000,5000]
+            check_after = [200,500]
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
