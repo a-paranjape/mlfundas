@@ -497,7 +497,7 @@ class Sequential(Module,MLUtilities,Utilities):
 #################
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
-    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,
+    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,
                  min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,arch_type=None,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -505,6 +505,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.Y = Y
         self.val_frac = val_frac
         self.train_frac = train_frac
+        self.n_iter = n_iter # no. of times to iterate training/test generation
         self.min_layer = min_layer # min no. of layers
         self.max_layer = max_layer # max no. of layers
         self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
@@ -538,14 +539,6 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("... setting up training and test samples",self.logfile)
         
         self.rng = np.random.RandomState(self.seed)
-        self.ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
-        self.ind_test = np.delete(np.arange(self.n_samp),self.ind_train) # Note ind_test is ordered although ind_train is randomised
-
-        self.X_train = self.X[:,self.ind_train].copy()
-        self.Y_train = self.Y[:,self.ind_train].copy()
-
-        self.X_test = self.X[:,self.ind_test].copy()
-        self.Y_test = self.Y[:,self.ind_test].copy()
         
         if self.verbose:
             self.print_this("... setup complete",self.logfile)
@@ -572,6 +565,19 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.arch_type not in ['emulator']:
                 raise ValueError("arch_type must be None or one of ['emulator'] in BuildNN.")
             
+        return
+
+    def gen_train(self):
+        """ Convenience function to be able to repeatedly split input data into training and test samples. """
+        self.ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
+        self.ind_test = np.delete(np.arange(self.n_samp),self.ind_train) # Note ind_test is ordered although ind_train is randomised
+
+        self.X_train = self.X[:,self.ind_train].copy()
+        self.Y_train = self.Y[:,self.ind_train].copy()
+
+        self.X_test = self.X[:,self.ind_test].copy()
+        self.Y_test = self.Y[:,self.ind_test].copy()
+
         return
 
     def trainNN(self):
@@ -617,53 +623,55 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = self.n_iter*layers.size*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         mean_test_loss_this = 1e30
         mean_test_loss = 1e25
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
         compare_Y = self.rv(np.ones(self.n_test))
-        for ll in range(layers.size):
-            L = layers[ll]
-            pset['L'] = L
-            for lrate in lrates:
-                ptrn['lrate'] = lrate
-                for ex in self.max_ex_vals: 
-                    pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                    for rf in reg_funs:
-                        pset['reg_fun'] = rf
-                        for last_atype in last_atypes:
-                            for htype in hidden_atypes:
-                                pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                net_this = Sequential(params=pset)
-                                net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                Ypred_this = net_this.predict(self.X_test)/(self.Y_test + 1e-15)
-                                mean_test_loss_this = np.sqrt(net_this.loss.forward(Ypred_this,compare_Y)/self.n_test)
-                                # mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
-                                if not np.isfinite(mean_test_loss_this):
-                                    mean_test_loss_this = 1e30
-                                if mean_test_loss_this < mean_test_loss:
-                                    # store the current best network
-                                    net = copy.deepcopy(net_this)
-                                    params_setup = copy.deepcopy(pset)
-                                    params_setup['verbose'] = self.verbose
-                                    net.verbose = self.verbose
-                                    params_train = copy.deepcopy(ptrn)
-                                    # record current best mean test loss
-                                    mean_test_loss = 1.0*mean_test_loss_this
-                                    # save current best network (weights and setup + train dicts) to file
-                                    net.save()
-                                    self.save_train(params_train)
+        for it in range(self.n_iter):
+            self.gen_train() # sample training+test data
+            for ll in range(layers.size):
+                L = layers[ll]
+                pset['L'] = L
+                for lrate in lrates:
+                    ptrn['lrate'] = lrate
+                    for ex in self.max_ex_vals: 
+                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                        for rf in reg_funs:
+                            pset['reg_fun'] = rf
+                            for last_atype in last_atypes:
+                                for htype in hidden_atypes:
+                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+                                    net_this = Sequential(params=pset)
+                                    net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                    Ypred_this = net_this.predict(self.X_test)/(self.Y_test + 1e-15)
+                                    mean_test_loss_this = np.sqrt(net_this.loss.forward(Ypred_this,compare_Y)/self.n_test)
+                                    # mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                    if not np.isfinite(mean_test_loss_this):
+                                        mean_test_loss_this = 1e30
+                                    if mean_test_loss_this < mean_test_loss:
+                                        # store the current best network
+                                        net = copy.deepcopy(net_this)
+                                        params_setup = copy.deepcopy(pset)
+                                        params_setup['verbose'] = self.verbose
+                                        net.verbose = self.verbose
+                                        params_train = copy.deepcopy(ptrn)
+                                        # record current best mean test loss
+                                        mean_test_loss = 1.0*mean_test_loss_this
+                                        # save current best network (weights and setup + train dicts) to file
+                                        net.save()
+                                        self.save_train(params_train)
 
-                                if mean_test_loss <= self.target_test_loss:
+                                    if mean_test_loss <= self.target_test_loss:
+                                        if self.verbose:
+                                            self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                        return net,params_train,mean_test_loss
+
                                     if self.verbose:
-                                        self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                    return net,params_train,mean_test_loss
-
-                                if self.verbose:
-                                    self.status_bar(cnt,cnt_max)
-                                cnt += 1
+                                        self.status_bar(cnt,cnt_max)
+                                    cnt += 1
 
         # return last stored network, training params and mean test loss
         return net,params_train,mean_test_loss
