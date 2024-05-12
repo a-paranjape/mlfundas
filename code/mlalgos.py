@@ -622,6 +622,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         mean_test_loss = 1e25
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
+        compare_Y = self.rv(np.ones(self.n_test))
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
@@ -639,8 +640,9 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    Ypred_this = net_this.predict(self.X_test)
-                                    mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
+                                    Ypred_this = net_this.predict(self.X_test)/(self.Y_test + 1e-15)
+                                    mean_test_loss_this = np.sqrt(net_this.loss.forward(Ypred_this,compare_Y)/self.n_test)
+                                    # mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
                                     if not np.isfinite(mean_test_loss_this):
                                         mean_test_loss_this = 1e30
                                     if mean_test_loss_this < mean_test_loss:
