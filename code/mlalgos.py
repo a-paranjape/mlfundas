@@ -598,20 +598,18 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':True,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count}
+        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac}
         
         if self.arch_type is None:
             reg_funs = ['none','bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
             check_after = [20]
-            ptrn['val_frac'] = self.val_frac
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
             layers = np.array([2,3])
             lrates = np.array([0.001,0.005])
             check_after = [2000,5000]
-            ptrn['val_frac'] = 0.01
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
