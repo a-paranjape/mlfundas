@@ -593,22 +593,25 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        mb_count = 10 #(10 if mep < 10000 else 5)
+        mb_count = 10
+        max_epochs = 50000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':True,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
+        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count}
+        
         if self.arch_type is None:
             reg_funs = ['none','bn']
-            max_epochs = [5000] # validation check is active
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
-            ptrn = {'val_frac':self.val_frac,'check_after':20}
+            check_after = [20]
+            ptrn['val_frac'] = self.val_frac
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            max_epochs = [2000,5000] # full range will be used
             layers = np.array([2,3])
-            ptrn = {'val_frac':0.01,'check_after':np.max(max_epochs)+1}
             lrates = np.array([0.001,0.005])
+            check_after = [2000,5000]
+            ptrn['val_frac'] = 0.01
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
@@ -616,7 +619,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = layers.size*len(max_epochs)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = layers.size*len(check_after)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         mean_test_loss_this = 1e30
         mean_test_loss = 1e25
@@ -626,9 +629,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
-            for mep in max_epochs:
-                ptrn['max_epoch'] = mep
-                ptrn['mb_count'] = mb_count
+            for chk in check_after:
+                ptrn['check_after'] = chk
                 for lrate in lrates:
                     ptrn['lrate'] = lrate
                     for ex in self.max_ex_vals: 
