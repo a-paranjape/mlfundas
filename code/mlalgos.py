@@ -608,7 +608,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
             layers = np.array([2,3])
-            lrates = np.array([0.001,0.005])
+            lrates = np.array([0.001])
             ptrn['check_after'] = 1000
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
