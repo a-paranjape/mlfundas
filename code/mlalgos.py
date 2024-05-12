@@ -630,20 +630,20 @@ class BuildNN(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
         compare_Y = self.rv(np.ones(self.n_test))
-        for it in range(self.n_iter):
-            self.gen_train() # sample training+test data
-            for ll in range(layers.size):
-                L = layers[ll]
-                pset['L'] = L
-                for lrate in lrates:
-                    ptrn['lrate'] = lrate
-                    for ex in self.max_ex_vals: 
-                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                        for rf in reg_funs:
-                            pset['reg_fun'] = rf
-                            for last_atype in last_atypes:
-                                for htype in hidden_atypes:
-                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+        for ll in range(layers.size):
+            L = layers[ll]
+            pset['L'] = L
+            for lrate in lrates:
+                ptrn['lrate'] = lrate
+                for ex in self.max_ex_vals: 
+                    pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                    for rf in reg_funs:
+                        pset['reg_fun'] = rf
+                        for last_atype in last_atypes:
+                            for htype in hidden_atypes:
+                                pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+                                for it in range(self.n_iter):
+                                    self.gen_train() # sample training+test data
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
                                     Ypred_this = net_this.predict(self.X_test)/(self.Y_test + 1e-15)
