@@ -104,7 +104,7 @@ class SoftMax(Module,MLUtilities):
     net_type = 'class'
     
     def forward(self,Z):
-        exp_z = np.exp(Z) # (K,n_{sample})
+        exp_z = np.exp(Z - np.max(Z)) # (K,n_{sample}) # subtract max inside exp to control overflows, cancels in A.
         self.A = exp_z/np.sum(exp_z,axis=0)
         return self.A # (K,n_{sample})
 
