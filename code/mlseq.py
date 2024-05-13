@@ -1,7 +1,7 @@
 import numpy as np
 from utilities import Utilities
-from mllib import MLUtilities
-
+from mllib import MLUtilities,SeqUtilities
+from mlalgos import Sequential
 
 #################################
 # State Machine
@@ -221,120 +221,251 @@ class My_MarkovDecisionProcess(MLUtilities,Utilities):
         
 #################################
 
-# #################################
-# # (structure courtesy MIT-OLL MLIntro Course)
-# # Discrete distribution represented as a dictionary.  Can be
-# # sparse, in the sense that elements that are not explicitly
-# # contained in the dictionary are assumed to have zero probability.
-# #################
-# class DDist(object):
-#     """ Discrete distribution over states. """
-#     def __init__(self, dictionary,rng=None):
-#         # Initializes dictionary whose keys are elements of the domain
-#         # and values are their probabilities
-#         self.ddist = dictionary
-#         self.elts = list(self.ddist.keys())
-#         self.support = []
-#         for elt in self.elts:
-#             probab = self.prob(elt)
-#             if probab > 0.0:
-#                 self.support.append(elt)
-#         self.rng = rng if rng is not None else no.random.RandomState()
-
-#     def prob(self, elt):
-#         # Returns the probability associated with elt
-#         return self.ddist[elt]
-
-#     def support(self):
-#         # Returns a list (in any order) of the elements of this
-#         # distribution with non-zero probability.
-#         return self.support
-
-#     def draw(self):
-#         # Returns a randomly drawn element from the distribution
-#         u = self.rng.rand()
-#         for elt in self.elts:
-#             prob = self.ddist[elt]
-#             if u < prob:
-#                 return elt
-#             else:
-#                 u -= prob
-#         raise Exception('Failed to draw from '+ str(self))
-
-#     def expectation(self, f):
-#         # Returns the expected value of the function f over the current distribution
-#         return sum([self.ddist[elt]*f(elt) for elt in self.support])
-# #################################
-
-# #################################
-# def uniform_dist(elts):
-#     """
-#     Uniform distribution over a given finite set of C{elts}
-#     @param elts: list of any kind of item
-#     """
-#     p = 1.0 / len(elts)
-#     return DDist(dict([(e, p) for e in elts]))
-# #################################
-
-# #################################
-# # Markov Decision Process (concepts from MIT-OLL)
-# #################
-# class MarkovDecisionProcess(MLUtilities,Utilities):
-#     """ Markov decision process. """
-#     def __init__(self,states,actions,transition,reward,discount_factor=1.0,start_dist=None,verbose=True,logfile=None):
-#         """ Markov decision process. 
-#             -- states: list of possible states
-#             -- actions: list of possible actions
-#             -- transition: function from (state,action) into DDist over next state
-#             -- reward: function object with call sign reward(state,action). Must be compatible with states and transition.
-#             -- discount_factor: discount value in (0,1).
-#             -- start_dist: optional instance of DDist, specifying initial state dist.
-#                            If unspecified, set to uniform over states.
-#         """
-#         Utilities.__init__(self)
-#         self.verbose = verbose
-#         self.logfile = logfile
-#         self.states = states
-#         self.transition = transition
-#         self.actions = actions
-#         self.reward = reward
-#         self.start = start_dist if start_dist else uniform_dist(states)
+#################################
+# Markov Decision Process (concepts from MIT-OLL)
+#################
+class MarkovDecisionProcess(MLUtilities,Utilities):
+    """ Markov decision process. """
+    def __init__(self,states,actions,transition,reward,discount_factor=1.0,start_dist=None,verbose=True,logfile=None):
+        """ Markov decision process. 
+            -- states: list of possible states
+            -- actions: list of possible actions
+            -- transition: function from (state,action) into DDist over next state
+            -- reward: function object with call sign reward(state,action). Must be compatible with states and transition.
+            -- discount_factor: discount value in (0,1).
+            -- start_dist: optional instance of DDist, specifying initial state dist.
+                           If unspecified, set to uniform over states.
+        """
+        Utilities.__init__(self)
+        self.verbose = verbose
+        self.logfile = logfile
+        self.states = states
+        self.transition = transition
+        self.actions = actions
+        self.reward = reward
+        self.start = start_dist if start_dist else uniform_dist(states)
 
 
-#     def terminal(self, s):
-#         """ Given a state, return True if the state should be considered to
-#             be terminal (generates an infinite sequence of zero reward). """
-#         return False
+    def terminal(self, s):
+        """ Given a state, return True if the state should be considered to
+            be terminal (generates an infinite sequence of zero reward). """
+        return False
 
-#     def init_state(self):
-#         """ Return an initial state by drawing from the distribution over start states."""
-#         return self.start.draw()
+    def init_state(self):
+        """ Return an initial state by drawing from the distribution over start states."""
+        return self.start.draw()
 
-#     def sim_transition(self, s, a):
-#         """ Simulates a transition from the given state, s and action a, using the
-#             transition model as a probability distribution.  If s is terminal,
-#             use init_state to draw an initial state.  Returns (reward, new_state). """
-#         return (self.reward(s, a),
-#                 self.init_state() if self.terminal(s) else
-#                     self.transition_model(s, a).draw())
+    def sim_transition(self, s, a):
+        """ Simulates a transition from the given state, s and action a, using the
+            transition model as a probability distribution.  If s is terminal,
+            use init_state to draw an initial state.  Returns (reward, new_state). """
+        return (self.reward(s, a),
+                self.init_state() if self.terminal(s) else
+                    self.transition_model(s, a).draw())
+    
+    def state2vec(self, s):
+        """ One-hot encoding of state s; used in neural network agent implementations. """
+        v = np.zeros((1, len(self.states)))
+        v[0,self.states.index(s)] = 1.
+        return v.T # return v for keras, v.T for mlfundas
+#################################
 
-# #################################
+#################################
+class TabularQ():
+    def __init__(self, states, actions):
+        self.actions = actions
+        self.states = states
+        self.q = dict([((s, a), 0.0) for s in states for a in actions])
 
-# #################################
-# class TabularQ:
-#     def __init__(self, states, actions):
-#         self.actions = actions
-#         self.states = states
-#         self.q = dict([((s, a), 0.0) for s in states for a in actions])
+    def copy(self):
+        q_copy = TabularQ(self.states, self.actions)
+        q_copy.q.update(self.q)
+        return q_copy
 
-#     def copy(self):
-#         q_copy = TabularQ(self.states, self.actions)
-#         q_copy.q.update(self.q)
-#         return q_copy
+    def set(self, s, a, v):
+        self.q[(s,a)] = v
 
-#     def set(self, s, a, v):
-#         self.q[(s,a)] = v
+    def get(self, s, a):
+        return self.q[(s,a)]
 
-#     def get(self, s, a):
-#         return self.q[(s,a)]
-# #################################
+    def update(self,data,lrate):
+        one_m_lr = 1-lrate
+        for sat in data:
+            s,a,t = sat
+            v = self.get(s,a)*one_m_lr + lrate*t
+            self.set(s,a,v)
+        return
+#################################
+
+#################################
+class SeqLearn(SeqUtilities):
+    """ Routines for various flavours of Q-learning. """
+    #################################
+    def QLearn(self,mdp,q,lrate=0.1,iters=100,eps=0.5,interactive=None):
+        """ Learn Q function element-wise for given MDP.
+            --   mdp: instance of MarkovDecisionProcess
+            --     q: instance of TabularQ
+            -- lrate: learning rate
+            -- iters: max no. of iterations
+            --   eps: exploration control for epsilon_greedy()
+            Returns:
+            -- updated q
+        """
+        # assume initialised Q provided as input
+        # # initialise Q(s,a) = 0
+        # for s in q.states:
+        #     for a in q.actions:
+        #         q.set(s,a,0.0)
+        
+        # pick starting state
+        s = mdp.init_state()
+        # learn
+        for i in range(iters):
+            # select action
+            a = self.epsilon_greedy(q,s,eps=eps)
+            # execute action
+            r,s_pr = mdp.sim_transition(s,a)
+            # now we have s,a,r,s_pr
+            # calculate target
+            future_val = 0.0 if mdp.terminal(s) else self.value(q,s)
+            t = r + mdp.discount_factor*future_val
+            # update
+            q.update([(s,a,t)],lrate)
+            s = s_pr
+            if interactive: interactive(q,i)
+
+        return q
+    #################################
+
+
+    #################################
+    # courtesy MIT-OLL MLIntro Course
+    def value_iteration(self,mdp, q, eps = 0.01, max_iters = 1000):
+        def v(s):
+            return self.value(q,s)
+        for it in range(max_iters):
+            new_q = q.copy()
+            delta = 0
+            for s in mdp.states:
+                for a in mdp.actions:
+                    new_q.set(s, a, mdp.reward_fn(s, a) + mdp.discount_factor*mdp.transition_model(s, a).expectation(v))
+                    delta = max(delta, abs(new_q.get(s, a) - q.get(s, a)))
+            if delta < eps:
+                return new_q
+            q = new_q
+            
+        return q
+    #################################
+
+
+    #################################
+    # courtesy MIT-OLL MLIntro Course
+    def sim_episode(self,mdp, episode_length, policy):
+        """ Simulate an episode (sequence of transitions) of at most
+            episode_length, using policy function to select actions.  If we find
+            a terminal state, end the episode.  
+            Return accumulated reward and a list
+            of (s, a, r, s') where s' is None for transition from terminal state.
+        """
+        episode = []
+        reward = 0
+        s = mdp.init_state()
+        for i in range(episode_length):
+            a = policy(s)
+            (r, s_prime) = mdp.sim_transition(s, a)
+            reward += r
+            if mdp.terminal(s):
+                episode.append((s, a, r, None))
+                break
+            episode.append((s, a, r, s_prime))
+            s = s_prime
+
+        return reward, episode
+    #################################
+
+
+    #################################
+    def QLearn_Batch(self,mdp,q,lrate=0.1,iters=100,eps=0.5,episode_length=10,n_episodes=2,interactive=None):
+        """ Learn Q function for given MDP using episodes.
+            --   mdp: instance of MarkovDecisionProcess
+            --     q: instance of TabularQ
+            -- lrate: learning rate
+            -- iters: max no. of iterations
+            --   eps: exploration control for epsilon_greedy()
+            -- episode_length,n_episodes: self-explanatory.
+            Returns:
+            -- updated q
+        """
+        # initialise Q(s,a) = 0
+        for s in q.states:
+            for a in q.actions:
+                q.set(s,a,0.0) 
+
+        policy = lambda s: self.epsilon_greedy(q,s,eps=eps)
+        
+        # learn
+        all_experiences = []
+        for i in range(iters):
+            for n in range(n_episodes):
+                # simulate episode
+                reward,episode = self.sim_episode(mdp,episode_length,policy)
+                all_experiences += episode
+
+            all_q_targets = []
+            for exp in all_experiences:
+                s,a,r,s_pr = exp
+                # calculate target
+                future_val = 0.0 if s_pr is None else self.value(q,s_pr)
+                t = r + mdp.discount_factor*future_val
+                all_q_targets.append((s,a,t))
+
+            # update
+            q.update(all_q_targets,lrate)
+            if interactive: interactive(q,i)
+
+        return q
+    #################################
+    
+class NNQ(MLUtilities,Utilities):
+    def __init__(self):
+        Utilities.__init__(self,states,actions,state2vec,num_hidden_layers,num_units,epochs=1,no_minibatch=True)
+        self.actions = actions
+        self.states = states
+        self.epochs = epochs
+        self.state2vec = state2vec
+        self.models = {a:self.make_nn(len(self.states),num_hidden_layers, num_units) for a in self.actions}
+        self.no_minibatch = no_minibatch
+
+    def make_nn(self,state_dim, num_hidden_layers, num_units):
+        """
+        state_dim = (int) number of states
+        num_hidden_layers = (int) number of fully connected hidden layers
+        num_units = (int) number of dense relu units to use in hidden layers
+        """
+        params_setup = {'data_dim':state_dim,'L':num_hidden_layers+1,'adam':True,
+                        'n_layer':[num_units]*num_hidden_layers+[1]:,'standardize':True,'reg_fun':'none',
+                        'atypes':['relu']*num_hidden_layers+['lin'],'loss_type':'square'}
+        model = Sequential(params_setup)
+        return model
+        # # use structure below for keras
+        # model = Sequential()
+        # model.add(Dense(num_units, input_dim = state_dim, activation='relu'))
+        # for i in range(num_hidden_layers-1):
+        #     model.add(Dense(num_units, activation='relu'))
+        # model.add(Dense(1, activation='linear'))
+        # model.compile(loss='mse', optimizer=Adam())
+        # return model
+
+    def get(self, s, a):
+        return self.models[a].predict(self.state2vec(s))
+
+    # list selection trick courtesy MIT-OLL MLIntro Course
+    def update(self, data, lr):
+        for a in self.actions:
+            if [s for (s, at, t) in data if a==at]:
+                X = np.vstack([self.state2vec(s) for (s, at, t) in data if a==at]).T
+                Y = np.vstack([t for (s, at, t) in data if a==at]).T
+                mbc = Y.shape[1] if self.no_minibatch else int(np.sqrt(Y.shape[1]))
+                self.models[ia].train(X,Y,params={'max_epoch':self.epochs,'lrate':lr,'check_after':epochs+1,'mb_count':mbc})
+        return
+        

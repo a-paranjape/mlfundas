@@ -81,6 +81,84 @@ class MLUtilities(object):
         return score
     ###################
 
+
+#################################
+# (structure courtesy MIT-OLL MLIntro Course)
+# Discrete distribution represented as a dictionary.  Can be
+# sparse, in the sense that elements that are not explicitly
+# contained in the dictionary are assumed to have zero probability.
+#################
+class DDist(object):
+    """ Discrete distribution over states. """
+    def __init__(self, dictionary,rng=None):
+        # Initializes dictionary whose keys are elements of the domain
+        # and values are their probabilities
+        self.ddist = dictionary
+        self.support = list(self.ddist.keys())
+        self.rng = rng if rng is not None else no.random.RandomState()
+
+    def prob(self, elt):
+        # Returns the probability associated with elt
+        return self.ddist[elt]
+
+    def support(self):
+        # Returns a list (in any order) of the elements of this
+        # distribution with non-zero probability.
+        return self.support
+
+    def draw(self):
+        # Returns a randomly drawn element from the distribution
+        u = self.rng.rand()
+        for elt in self.support:
+            prob = self.ddist[elt]
+            if u < prob:
+                return elt
+            else:
+                u -= prob
+        raise Exception('Failed to draw from '+ str(self))
+
+    def expectation(self, f):
+        # Returns the expected value of the function f over the current distribution
+        return sum([self.ddist[elt]*f(elt) for elt in self.support])
+#################################
+
+#############################################
+def SeqUtilities(object)
+#############################################
+    def uniform_dist(elts):
+        """
+        Uniform distribution over a given finite set of C{elts}
+        @param elts: list of any kind of item
+        """
+        p = 1.0 / len(elts)
+        return DDist(dict([(e, p) for e in elts]))
+    
+    def value(self,q,s):
+        val = 0.0
+        act = None
+        for a in q.actions:
+            val = np.max([val,q.get(s,a)])
+        return val
+
+    def greedy(self,q,s):
+        val = 0.0
+        act = None
+        for a in q.actions:
+            val_this = q.get(s,a)
+            if val_this > val:
+                val = val_this
+                act = a
+        return act
+
+    def epsilon_greedy(self,q,s,eps=0.5,rng=None):
+        u = rng.rand() if rng is not None else np.random.rand()
+        if u < eps:
+            return self.uniform_dist(q.actions).draw()
+        else:
+            return self.greedy(q,s)
+#################################
+
+    
 #############################################
 class Evaluate(MLUtilities,Utilities):
     def __init__(self,verbose=True,logfile=None):
