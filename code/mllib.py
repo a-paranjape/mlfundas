@@ -123,7 +123,7 @@ class DDist(object):
 #################################
 
 #############################################
-def SeqUtilities(object)
+def SeqUtilities(object):
 #############################################
     def uniform_dist(elts):
         """
