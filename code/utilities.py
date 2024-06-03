@@ -51,7 +51,7 @@ class Utilities(object):
     
     ############################################################
     def gen_latin_hypercube(self,Nsamp=10,dim=2,symmetric=True,param_mins=None,param_maxs=None,
-                            rng=None):
+                            rng=None,return_layers=False):
         """ Generate Latin hypercube sample (symmetric by default). 
              Either param_mins and param_maxs should both be None or both be array-like of shape (dim,). 
             -- rng: either None or instance of numpy.random.RandomState(). Default None.
@@ -59,7 +59,9 @@ class Utilities(object):
              https://codereview.stackexchange.com/questions/223569/generating-latin-hypercube-samples-with-numpy
              See https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.49.7292&rep=rep1&type=pdf
              for some ideas reg utility of symmetric Latin hypercubes.
-             Returns array of shape (Nsamp,dim) with values in range (0,1) or respective minimum to maximum values.
+             Returns 
+             -- array of shape (Nsamp,dim) with values in range (0,1) or respective minimum to maximum values.
+             -- (optional) array of ints (Nsamp,) with layer number of each sample (outermost layer is 0).
         """
         if (param_mins is not None): 
             if (param_maxs is None):
@@ -96,21 +98,40 @@ class Utilities(object):
                     sample2.append(Nsamp-1-k)
                     idx.remove(k)
                     idx.remove(Nsamp-1-k)
-
                 samples.append(sample1)
                 samples.append(sample2)
 
-            samples = np.array(samples)/(1.0*Nsamp)
+            samples = np.array(samples)
         else:
-            samples = np.array([rng_use.permutation(Nsamp) for i in range(dim)])/(1.0*Nsamp)
+            samples = np.array([rng_use.permutation(Nsamp) for i in range(dim)])
             samples = samples.T
 
+        if return_layers:
+            layers = np.zeros(Nsamp,dtype=int)
+            indices = np.arange(Nsamp)
+            samples_copy = samples.copy()
+            N_layers = (Nsamp // 2) + 1
+            # peel off layers inwards
+            for l in range(N_layers):
+                points = []
+                for d in range(dim):
+                    points = np.concatenate((np.array(points),np.where((samples_copy[:,d] == l) | (samples_copy[:,d] == Nsamp-l))[0]))
+                points = np.unique(points.astype(int))
+                layers[indices[points]] = l
+                samples_copy = np.delete(samples_copy,points,axis=0)
+                indices = np.delete(indices,points)
+                    
+        samples = samples/(1.0*Nsamp)
+        
         if (param_mins is not None):
             for d in range(dim):
                 samples[:,d] *= (param_maxs[d] - param_mins[d])
                 samples[:,d] += param_mins[d]
 
-        return samples
+        if return_layers:
+            return samples,layers
+        else:
+            return samples
     ############################################################
 
 
