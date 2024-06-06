@@ -392,7 +392,6 @@ class Sequential(Module,MLUtilities,Utilities):
         ind_shuff = np.arange(n_samp)
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
-            # missed below 2 lines earlier!
             X_train_shuff = X_train[:,ind_shuff].copy()
             Y_train_shuff = Y_train[:,ind_shuff].copy()
             for b in range(mb_count):

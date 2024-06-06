@@ -224,7 +224,7 @@ class My_MarkovDecisionProcess(MLUtilities,Utilities):
 #################################
 # Markov Decision Process (concepts from MIT-OLL)
 #################
-class MarkovDecisionProcess(MLUtilities,Utilities):
+class MarkovDecisionProcess(MLUtilities,Utilities,SeqUtilities):
     """ Markov decision process. """
     def __init__(self,states,actions,transition,reward,discount_factor=1.0,start_dist=None,verbose=True,logfile=None):
         """ Markov decision process. 
@@ -243,7 +243,8 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
         self.transition = transition
         self.actions = actions
         self.reward = reward
-        self.start = start_dist if start_dist else uniform_dist(states)
+        self.discount_factor = discount_factor
+        self.start = start_dist if start_dist is not None else self.uniform_dist(states)
 
 
     def terminal(self, s):
@@ -259,9 +260,7 @@ class MarkovDecisionProcess(MLUtilities,Utilities):
         """ Simulates a transition from the given state, s and action a, using the
             transition model as a probability distribution.  If s is terminal,
             use init_state to draw an initial state.  Returns (reward, new_state). """
-        return (self.reward(s, a),
-                self.init_state() if self.terminal(s) else
-                    self.transition_model(s, a).draw())
+        return (self.reward(s, a),self.init_state() if self.terminal(s) else self.transition(s, a).draw())
     
     def state2vec(self, s):
         """ One-hot encoding of state s; used in neural network agent implementations. """
@@ -288,7 +287,7 @@ class TabularQ():
     def get(self, s, a):
         return self.q[(s,a)]
 
-    def update(self,data,lrate):
+    def update(self,data,lrate): 
         one_m_lr = 1-lrate
         for sat in data:
             s,a,t = sat
@@ -327,12 +326,12 @@ class SeqLearn(SeqUtilities):
             r,s_pr = mdp.sim_transition(s,a)
             # now we have s,a,r,s_pr
             # calculate target
-            future_val = 0.0 if mdp.terminal(s) else self.value(q,s)
+            future_val = 0.0 if mdp.terminal(s) else self.value(q,s_pr)
             t = r + mdp.discount_factor*future_val
             # update
             q.update([(s,a,t)],lrate)
             s = s_pr
-            if interactive: interactive(q,i)
+            if interactive is not None: interactive(q,i)
 
         return q
     #################################
@@ -443,7 +442,7 @@ class NNQ(MLUtilities,Utilities):
         num_units = (int) number of dense relu units to use in hidden layers
         """
         params_setup = {'data_dim':state_dim,'L':num_hidden_layers+1,'adam':True,
-                        'n_layer':[num_units]*num_hidden_layers+[1]:,'standardize':True,'reg_fun':'none',
+                        'n_layer':[num_units]*num_hidden_layers+[1],'standardize':True,'reg_fun':'none',
                         'atypes':['relu']*num_hidden_layers+['lin'],'loss_type':'square'}
         model = Sequential(params_setup)
         return model

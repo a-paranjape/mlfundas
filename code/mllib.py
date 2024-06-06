@@ -95,7 +95,7 @@ class DDist(object):
         # and values are their probabilities
         self.ddist = dictionary
         self.support = list(self.ddist.keys())
-        self.rng = rng if rng is not None else no.random.RandomState()
+        self.rng = rng if rng is not None else np.random.RandomState()
 
     def prob(self, elt):
         # Returns the probability associated with elt
@@ -123,9 +123,9 @@ class DDist(object):
 #################################
 
 #############################################
-def SeqUtilities(object):
-#############################################
-    def uniform_dist(elts):
+class SeqUtilities(object):
+    
+    def uniform_dist(self,elts):
         """
         Uniform distribution over a given finite set of C{elts}
         @param elts: list of any kind of item
@@ -135,7 +135,6 @@ def SeqUtilities(object):
     
     def value(self,q,s):
         val = 0.0
-        act = None
         for a in q.actions:
             val = np.max([val,q.get(s,a)])
         return val
@@ -148,7 +147,7 @@ def SeqUtilities(object):
             if val_this > val:
                 val = val_this
                 act = a
-        return act
+        return act if act is not None else q.actions[0]
 
     def epsilon_greedy(self,q,s,eps=0.5,rng=None):
         u = rng.rand() if rng is not None else np.random.rand()
