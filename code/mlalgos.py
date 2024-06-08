@@ -354,14 +354,18 @@ class Sequential(Module,MLUtilities,Utilities):
         n_val = np.rint(val_frac*n_samp).astype(int)
         n_samp -= n_val        
 
-        ind_val = self.rng.choice(Y.shape[1],size=n_val,replace=False)
-        ind_train = np.delete(np.arange(Y.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+        if n_val > 0:
+            ind_val = self.rng.choice(Y.shape[1],size=n_val,replace=False)
+            ind_train = np.delete(np.arange(Y.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+        else:
+            ind_train = np.arange(Y.shape[1])
 
         X_train = X[:,ind_train].copy()
         Y_train = Y[:,ind_train].copy()
 
-        X_val = X[:,ind_val].copy()
-        Y_val = Y[:,ind_val].copy()
+        if n_val > 0:
+            X_val = X[:,ind_val].copy()
+            Y_val = Y[:,ind_val].copy()
         
         if self.standardize:
             self.Y_std = np.std(Y,axis=1)
@@ -370,12 +374,14 @@ class Sequential(Module,MLUtilities,Utilities):
             self.params['Y_mean'] = self.Y_mean
             Y_train -= self.Y_mean
             Y_train /= (self.Y_std + 1e-15)
-            Y_val -= self.Y_mean
-            Y_val /= (self.Y_std + 1e-15)
+            if n_val > 0:
+                Y_val -= self.Y_mean
+                Y_val /= (self.Y_std + 1e-15)
             
         if (mb_count > n_samp) | (mb_count < 1):
             if self.verbose:
-                self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp (standard SGD).",self.logfile)
+                self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
+                                self.logfile)
             mb_count = n_samp
         if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
             if self.verbose:
@@ -410,15 +416,16 @@ class Sequential(Module,MLUtilities,Utilities):
                 self.sgd_step(t,lrate) # gradient descent update
 
             # validation check
-            Ypred_val = self.forward(X_val) # update activations. prediction for validation data
-            self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
-            if t > check_after:
-                chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
-                chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
-                if chk_half & chk:
-                    if self.verbose:
-                        self.print_this('',self.logfile)
-                    break
+            if n_val > 0:
+                Ypred_val = self.forward(X_val) # update activations. prediction for validation data
+                self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
+                if t > check_after:
+                    chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
+                    chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
+                    if chk_half & chk:
+                        if self.verbose:
+                            self.print_this('',self.logfile)
+                        break
             
             if self.verbose:
                 self.status_bar(t,max_epoch)

@@ -395,10 +395,11 @@ class SeqLearn(SeqUtilities):
             Returns:
             -- updated q
         """
-        # initialise Q(s,a) = 0
-        for s in q.states:
-            for a in q.actions:
-                q.set(s,a,0.0) 
+        # assume Q values initialized to zeros
+        # # initialise Q(s,a) = 0
+        # for s in q.states:
+        #     for a in q.actions:
+        #         q.set(s,a,0.0) 
 
         policy = lambda s: self.epsilon_greedy(q,s,eps=eps)
         
@@ -426,8 +427,9 @@ class SeqLearn(SeqUtilities):
     #################################
     
 class NNQ(MLUtilities,Utilities):
-    def __init__(self):
-        Utilities.__init__(self,states,actions,state2vec,num_hidden_layers,num_units,epochs=1,no_minibatch=True)
+    """ Neural network implementation for Q value function in reinforcement learning. """
+    def __init__(self,states,actions,state2vec,num_hidden_layers,num_units,epochs=1,no_minibatch=True):
+        Utilities.__init__(self)
         self.actions = actions
         self.states = states
         self.epochs = epochs
@@ -462,9 +464,9 @@ class NNQ(MLUtilities,Utilities):
     def update(self, data, lr):
         for a in self.actions:
             if [s for (s, at, t) in data if a==at]:
-                X = np.vstack([self.state2vec(s) for (s, at, t) in data if a==at]).T
-                Y = np.vstack([t for (s, at, t) in data if a==at]).T
+                X = np.hstack([self.state2vec(s) for (s, at, t) in data if a==at])
+                Y = self.rv([t for (s, at, t) in data if a==at])
                 mbc = Y.shape[1] if self.no_minibatch else int(np.sqrt(Y.shape[1]))
-                self.models[ia].train(X,Y,params={'max_epoch':self.epochs,'lrate':lr,'check_after':epochs+1,'mb_count':mbc})
+                self.models[a].train(X,Y,params={'max_epoch':self.epochs,'lrate':lr,'mb_count':mbc,'val_frac':0.0})
         return
         
