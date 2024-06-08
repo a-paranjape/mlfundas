@@ -82,6 +82,15 @@ class MLUtilities(object):
     ###################
 
 
+    ###################
+    def tanh(self,x):
+        return np.tanh(x)
+
+    # Where th is the output
+    def tanh_gradient(self,th):
+        return 1 - th**2
+    ###################
+
 #################################
 # (structure courtesy MIT-OLL MLIntro Course)
 # Discrete distribution represented as a dictionary.  Can be

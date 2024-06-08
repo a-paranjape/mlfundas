@@ -92,7 +92,7 @@ class Reverser(StateMachine):
 #################################
 # Recurrent neural network
 #################
-class RecurrentNeuralNetwork(StateMachine):
+class RecurrentNeuralNetwork_SM(StateMachine):
     def __init__(self, Wsx, Wss, Wo, Wss_0, Wo_0, f1, f2, initial_state=None):
         self.Wsx = Wsx
         self.Wss = Wss
@@ -101,9 +101,10 @@ class RecurrentNeuralNetwork(StateMachine):
         self.Wo_0 = Wo_0
         self.f1 = f1
         self.f2 = f2
-        self.s_dim = self.Wsx.shape[0]
+        self.hidden_dim = self.Wsx.shape[0]
         self.x_dim = self.Wsx.shape[1]
-        self.initial_state = np.zeros((self.s_dim,1))
+        self.output_dim = self.Wo.shape[0]
+        self.initial_state = np.zeros((self.hidden_dim,1))
         StateMachine.__init__(self,initial_state=self.initial_state)
 
     def transition_func(self,s,x):
@@ -114,7 +115,156 @@ class RecurrentNeuralNetwork(StateMachine):
         linear = np.dot(self.Wo,s) + self.Wo_0
         return self.f2(linear)
 
+#####################
+# Courtesy MIT-OLL IntroML course, code_for_lab11 (Michael Sun)
+#################
+class RecurrentNeuralNetwork():
+    weight_scale = 0.0001
+    def __init__(self, input_dim, hidden_dim, output_dim, loss_fn, f2, dloss_f2, step_size=0.1,
+                 f1 = None, df1 = None, init_state = None,
+                 Wsx = None, Wss = None, Wo = None, Wss0 = None, Wo0 = None,
+                 adam = False):
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        self.loss_fn = loss_fn
+        self.dloss_f2 = dloss_f2
+        self.step_size = step_size
+        self.f1 = f1 if f1 is not None else self.tanh
+        self.df1 = df1 if df1 is not None else self.tanh_gradient
+        self.f2 = f2
+        self.init_state = init_state if init_state is not None else np.zeros((self.hidden_dim, 1))
+        self.hidden_state = self.init_state
+        self.t = 0
+        # Initialize weight matrices
+        self.Wsx = Wsx if Wsx is not None \
+                    else np.random.random((hidden_dim, input_dim)) * self.weight_scale
+        self.Wss = Wss if Wss is not None \
+                       else np.random.random((hidden_dim, hidden_dim)) * self.weight_scale
+        self.Wo = Wo if Wo is not None \
+                     else np.random.random((output_dim, hidden_dim)) * self.weight_scale
+        self.Wss0 = Wss0 if Wss0 is not None \
+                         else np.random.random((hidden_dim, 1)) * self.weight_scale
+        self.Wo0 = Wo0 if Wo0 is not None \
+                       else np.random.random((output_dim, 1)) * self.weight_scale
+    
+    # Just one step of forward propagation.  x and y are for a single time step
+    # Depends on self.hidden_state and reassigns it
+    # Returns predicted output, loss on this output, and dLoss_dz2
+    def forward_propagation(self, x):
+        new_state = self.f1(np.dot(self.Wsx, x) +
+                            np.dot(self.Wss, self.hidden_state) + self.Wss0)
+        z2 = np.dot(self.Wo, new_state) + self.Wo0
+        p = self.f2(z2)
+        self.hidden_state = new_state
+        return p
 
+    def forward_prop_loss(self, x, y):
+        p = self.forward_propagation(x)
+        loss = self.loss_fn(p, y)
+        dL_dz2 = self.dloss_f2(p, y)
+        return p, loss, dL_dz2
+
+    # Back propgation through time
+    # xs is matrix of inputs: l by k=nsamp
+    # dLdz2 is matrix of output errors:  1 by k
+    # states is matrix of state values: m by k
+    def bptt(self, xs, dLtdz2, states):
+        dWsx = np.zeros_like(self.Wsx)
+        dWss = np.zeros_like(self.Wss)
+        dWo = np.zeros_like(self.Wo)
+        dWss0 = np.zeros_like(self.Wss0)
+        dWo0 = np.zeros_like(self.Wo0)
+        # Derivative of future loss (from t+1 forward) wrt state at time t
+        # initially 0;  will pass "back" through iterations
+        dFtdst = np.zeros((self.hidden_dim, 1))
+        k = xs.shape[1]
+        # Technically we are considering time steps 1..k, but we need
+        # to index into our xs and states with indices 0..k-1
+        for t in range(k-1, -1, -1):
+            # Get relevant quantities
+            xt = xs[:, t:t+1]
+            st = states[:, t:t+1]
+            stm1 = states[:, t-1:t] if t-1 >= 0 else self.init_state
+            dLtdz2t = dLtdz2[:, t:t+1]
+            # Compute gradients step by step
+            # ==> Use self.df1(st) to get dfdz1;
+            dfdz1 = self.df1(st)
+            # ==> Use self.Wo, self.Wss, etc. for weight matrices
+            # derivative of loss at time t wrt state at time t
+            dLtdst = np.dot(self.Wo.T,dLtdz2t)        # Your code
+            # derivatives of loss from t forward
+            dFtm1dst = dLtdst + dFtdst            # Your code
+            dFtm1dz1t = dFtm1dst*dfdz1           # Your code
+            dFtm1dstm1 = np.dot(self.Wss.T,dFtm1dz1t)          # Your code
+            # gradients wrt weights
+            dLtdWo = np.dot(dLtdz2t,st.T)              # Your code
+            dLtdWo0 = dLtdz2t             # Your code
+            dFtm1dWss = np.dot(dFtm1dz1t,stm1.T)           # Your code
+            dFtm1dWss0 = dFtm1dz1t          # Your code
+            dFtm1dWsx = np.dot(dFtm1dz1t,xt.T)           # Your code
+            # Accumulate updates to weights
+            dWsx += dFtm1dWsx
+            dWss += dFtm1dWss
+            dWss0 += dFtm1dWss0
+            dWo += dLtdWo
+            dWo0 += dLtdWo0
+            # pass delta "back" to next iteration
+            dFtdst = dFtm1dstm1
+        return dWsx, dWss, dWo, dWss0, dWo0
+
+    def sgd_step(self, xs, dLdz2s, states):
+        # see code_for_lab11 for implementation with Adam
+        dWsx, dWss, dWo, dWss0, dWo0 = self.bptt(xs, dLdz2s, states)
+        self.t += 1
+        self.Wsx -= self.step_size * dWsx
+        self.Wss -= self.step_size * dWss
+        self.Wo -= self.step_size * dWo
+        self.Wss0 -= self.step_size * dWss0
+        self.Wo0 -= self.step_size * dWo0        
+        return
+
+    def forward_seq(self, x, y):
+        k = x.shape[1]
+        dLdZ2s = np.zeros((self.output_dim, k))
+        states = np.zeros((self.hidden_dim, k))
+        train_error = 0.0
+        self.reset_hidden_state()
+        for j in range(k):
+            p, loss, dLdZ2 = self.forward_prop_loss(x[:, j:j+1], y[:, j:j+1])
+            dLdZ2s[:, j:j+1] = dLdZ2
+            states[:, j:j+1] = self.hidden_state
+            train_error += loss
+        return train_error/k, dLdZ2s, states
+
+    # For now, training_seqs will be a list of pairs of np arrays.
+    # First will be l x k second n x k where k is the sequence length
+    # and can be different for each pair
+    def train_seq_to_seq(self, training_seqs, steps = 100000,
+                         print_interval = None):
+        if print_interval is None: print_interval = int(steps / 10)
+        num_seqs = len(training_seqs)
+        total_train_err = 0
+        self.t = 0
+        iters = 1
+        for step in range(steps):
+            i = np.random.randint(num_seqs)
+            x, y = training_seqs[i]
+            avg_seq_train_error, dLdZ2s, states = self.forward_seq(x, y)
+
+            # Check the gradient computation against the numerical grad.
+            # grads = self.b(x, dLdZ2s, states)
+            # grads_n = self.num_grad(lambda : forward_seq(x, y, dLdZ2s,
+            # states)[0])
+            # compare_grads(grads, grads_n)
+
+            self.sgd_step(x, dLdZ2s, states)
+            total_train_err += avg_seq_train_error
+            if (step % print_interval) == 0 and step > 0:
+                print('%d/10: training error'%iters, total_train_err / print_interval, flush=True)
+                total_train_err = 0
+                iters += 1
+    
 #################################
 
 #################################
