@@ -225,8 +225,10 @@ class BatchNorm(Module,MLUtilities):
         """ Read weights from file(s). """
         file_W = self.file_stem + '_W.txt'
         file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
-        self.W = self.cv(np.loadtxt(file_W))
-        self.W0 = self.cv(np.loadtxt(file_W0))
+        W = np.loadtxt(file_W)
+        W0 = np.loadtxt(file_W0)
+        self.W = self.cv(W) if W.size > 1 else self.cv([W])
+        self.W0 = self.cv(W0) if W0.size > 1 else self.cv([W0])
         return
 #################################
     
@@ -363,13 +365,10 @@ class Linear(Module,MLUtilities):
         """ Read weights from file(s). """
         file_W = self.file_stem + '_W.txt'
         file_W0 = self.file_stem + '_W0.txt' # simpler to keep these inside the method
-        self.W = np.loadtxt(file_W)
-        self.W0 = np.loadtxt(file_W0)
-        if self.n_next == 1:
-            self.W = self.cv(self.W)
-            self.W0 = self.rv([self.W0])
-        else:
-            self.W0 = self.cv(self.W0)
+        W = np.loadtxt(file_W)
+        W0 = np.loadtxt(file_W0)
+        self.W = self.cv(W) if W.size > 1 else self.cv([W])
+        self.W0 = self.cv(W0) if W0.size > 1 else self.cv([W0])
         return
 #################################
 

@@ -503,7 +503,7 @@ class Sequential(Module,MLUtilities,Utilities):
 #################
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
-    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,
+    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
                  min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,arch_type=None,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -511,6 +511,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.Y = Y
         self.val_frac = val_frac
         self.train_frac = train_frac
+        self.standardize = standardize
         self.n_iter = n_iter # no. of times to iterate training/test generation
         self.min_layer = min_layer # min no. of layers
         self.max_layer = max_layer # max no. of layers
@@ -608,7 +609,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         mb_count = 10
         max_epoch = 10000 # validation checks will be active
         
-        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':True,
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac}
         
