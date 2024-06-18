@@ -504,7 +504,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
-                 min_layer=1,max_layer=6,max_ex=2,target_test_loss=1e-2,loss_type='square',neg_labels=True,arch_type=None,
+                 min_layer=1,max_layer=6,max_ex=2,target_residual_width=1e-2,loss_type='square',neg_labels=True,arch_type=None,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
@@ -517,7 +517,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.max_layer = max_layer # max no. of layers
         self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
         self.max_ex_vals = np.arange(max_ex+1) if np.isscalar(max_ex) else self.max_ex
-        self.target_test_loss = target_test_loss
+        self.target_residual_width = target_residual_width
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.arch_type = arch_type # if not None, string describing architecture type to explore. currently accepts 'emulator'
@@ -632,11 +632,11 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         cnt_max = self.n_iter*layers.size*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
-        mean_test_loss_this = 1e30
-        mean_test_loss = 1e25
+        width_this = 1e30
+        width = 1e25
         if self.verbose:
             self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
-        compare_Y = self.rv(np.ones(self.n_test))
+        # compare_Y = self.rv(np.ones(self.n_test))
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
@@ -653,12 +653,12 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     self.gen_train() # sample training+test data
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    Ypred_this = net_this.predict(self.X_test)/(self.Y_test + 1e-15)
-                                    mean_test_loss_this = np.sqrt(net_this.loss.forward(Ypred_this,compare_Y)/self.n_test)
-                                    # mean_test_loss_this = net_this.loss.forward(Ypred_this,self.Y_test)/self.n_test
-                                    if not np.isfinite(mean_test_loss_this):
-                                        mean_test_loss_this = 1e30
-                                    if mean_test_loss_this < mean_test_loss:
+                                    resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                    resid = resid.flatten()
+                                    width_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                    if not np.isfinite(width_this):
+                                        width_this = 1e30
+                                    if width_this < width:
                                         # store the current best network
                                         net = copy.deepcopy(net_this)
                                         params_setup = copy.deepcopy(pset)
@@ -666,22 +666,22 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         net.verbose = self.verbose
                                         params_train = copy.deepcopy(ptrn)
                                         # record current best mean test loss
-                                        mean_test_loss = 1.0*mean_test_loss_this
+                                        width = 1.0*width_this
                                         # save current best network (weights and setup + train dicts) to file
                                         net.save()
                                         self.save_train(params_train)
 
-                                    if mean_test_loss <= self.target_test_loss:
+                                    if width <= self.target_residual_width:
                                         if self.verbose:
                                             self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                        return net,params_train,mean_test_loss
+                                        return net,params_train,width
 
                                     if self.verbose:
                                         self.status_bar(cnt,cnt_max)
                                     cnt += 1
 
-        # return last stored network, training params and mean test loss
-        return net,params_train,mean_test_loss
+        # return last stored network, training params and residual width
+        return net,params_train,width
 
     def save_train(self,params_train):
         """ Save training params to file. """
