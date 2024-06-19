@@ -498,6 +498,8 @@ class Sequential(Module,MLUtilities,Utilities):
     # to be called after generating/loading instance of Sequential() with correct setup params.
     def extract_basis(self):
         """ Extract penultimate layer of NN as collection of basis functions. """
+        if self.verbose:
+            self.print_this("... extracting basis functions",self.logfile)
         params_setup = copy.deepcopy(self.params)
         params_setup['L'] -= 1
         params_setup['n_layer'].pop(-1)
