@@ -494,7 +494,34 @@ class Sequential(Module,MLUtilities,Utilities):
             self.Y_mean = self.params['Y_mean']
         
         return
-        
+
+    # to be called after generating/loading instance of Sequential() with correct setup params.
+    def extract_basis(self):
+        """ Extract penultimate layer of NN as collection of basis functions. """
+        params_setup = copy.deepcopy(self.params)
+        params_setup['L'] -= 1
+        params_setup['n_layer'].pop(-1)
+        params_setup['atypes'].pop(-1)
+        basis = Sequential(params=params_setup)
+        for m in range(len(basis.modules)):
+            basis.modules[m] = copy.deepcopy(self.modules[m])
+        return basis
+
+    # to be called after invoking self.extract_basis()
+    def combine_basis(self,basis,X):
+        """ Simple wrapper to quickly test basis extraction by combining as per last layer of NN.
+            -- basis: Sequential instance created by self.extract_basis
+            -- X: input array of shape (n0,n_params) as used for NN (value of n_params can vary).
+            Returns final output of NN as (activated) linear combination of basis functions.
+        """
+        basis_func = basis.predict(X)
+        Z = self.modules[-2].forward(basis_func)
+        A = self.modules[-1].forward(Z)
+        if self.standardize:
+            A *= self.Y_std
+            A += self.Y_mean
+        return A
+    
 #################################
 
 
