@@ -523,6 +523,14 @@ class Sequential(Module,MLUtilities,Utilities):
             A *= self.Y_std
             A += self.Y_mean
         return A
+
+    def calc_N_freeparams(self):
+        """ Utility to calculate number of free parameters being optimized. """
+        N = 0
+        for l in range(self.L):
+            n_lm1 = 1*self.n0 if l==0 else 1*self.n_layer[l-1]
+            N += self.n_layer[l]*(n_lm1 + 1)
+        return N
     
 #################################
 
