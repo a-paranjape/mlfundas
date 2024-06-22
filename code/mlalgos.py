@@ -459,7 +459,7 @@ class Sequential(Module,MLUtilities,Utilities):
             Ypred += self.Y_mean
         if (self.net_type == 'class') & self.neg_labels:
             # convert 0 to -1 if needed.
-            Ypred[Ypred == 0.0] = -1.0
+            Ypred[Ypred < 1e-4] = -1.0
         return Ypred
 
     def save(self):
@@ -690,7 +690,11 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     self.gen_train() # sample training+test data
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                    if self.net_type == 'reg':
+                                        resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                    else:
+                                        resid = np.random.randn(self.Y_test[0],self.Y_test[1])
+                                        resid[net_this.predict(self.X_test) == self.Y_test] = 0.0
                                     resid = resid.flatten()
                                     width_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
                                     if not np.isfinite(width_this):
