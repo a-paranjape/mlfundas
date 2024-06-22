@@ -690,7 +690,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     self.gen_train() # sample training+test data
                                     net_this = Sequential(params=pset)
                                     net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    if self.net_type == 'reg':
+                                    if net_this.net_type == 'reg':
                                         resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
                                     else:
                                         resid = np.random.randn(self.Y_test[0],self.Y_test[1])
