@@ -693,7 +693,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     if net_this.net_type == 'reg':
                                         resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
                                     else:
-                                        resid = np.random.randn(self.Y_test[0],self.Y_test[1])
+                                        resid = np.random.randn(self.Y_test.shape[0],self.Y_test.shape[1])
                                         resid[net_this.predict(self.X_test) == self.Y_test] = 0.0
                                     resid = resid.flatten()
                                     width_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
