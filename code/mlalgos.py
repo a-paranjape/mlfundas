@@ -696,6 +696,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
                                     else:
                                         ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
+                                        # this is fraction of predictions that are incorrect 
                                     if not np.isfinite(ts_this):
                                         ts_this = 1e30
                                     if ts_this < teststat:
