@@ -635,7 +635,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("Initiating search... ",self.logfile)
 
         if self.loss_type in ['square','hinge']:
-            last_atypes = ['lin','tanh'] if self.arch_type != 'emulator' else ['lin','tanh']
+            last_atypes = ['lin','tanh'] #if self.arch_type != 'emulator' else ['lin','tanh']
         elif self.loss_type == 'nll':
             last_atypes = ['sigm','tanh']
         elif self.loss_type == 'nllm':
