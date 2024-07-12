@@ -48,6 +48,20 @@ class Utilities(object):
         return out
     ############################################################
 
+        
+    ################################################
+    def svd_inv(self,cov,hermitian=False,return_eig=False):
+        """ Convenience function to calculate inverse of square matrix using SVD. 
+            Returns inverse and determinant of input matrix and, if requested, array of eigenvalues.
+        """
+        U,s,Vh = np.linalg.svd(cov,hermitian=hermitian)
+        invcov = np.dot(Vh.T,np.dot(np.diag(1.0/s),U.T))
+        if not return_eig:
+            return invcov,np.prod(s)
+        else:
+            return invcov,np.prod(s),s
+    ################################################
+
     
     ############################################################
     def gen_latin_hypercube(self,Nsamp=10,dim=2,symmetric=True,param_mins=None,param_maxs=None,
