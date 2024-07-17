@@ -172,6 +172,8 @@ class Sequential(Module,MLUtilities,Utilities):
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
+            -- params['wt_decay']: float, weight decay coefficient (should be non-negative; default 0.0)
+            -- params['decay_norm']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
                                   If 'drop', then value of 'p_drop' must be specified. Default 'bn'.
@@ -188,7 +190,7 @@ class Sequential(Module,MLUtilities,Utilities):
         Utilities.__init__(self)
         self.params = params
         self.n0 = params.get('data_dim',None)
-        self.L = params.get('L',1)
+        self.L = int(params.get('L',1))
         self.n_layer = params.get('n_layer',[1]) # last n_layer should be compatible with y.shape
         self.atypes = params.get('atypes',['sigm']) # default assumes classification problem
         self.custom_atypes = params.get('custom_atypes',None) 
@@ -199,6 +201,8 @@ class Sequential(Module,MLUtilities,Utilities):
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.0)
+        self.wt_decay = params.get('wt_decay',0.0)
+        self.decay_norm = int(params.get('decay_norm',2))
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','net')
         self.verbose = params.get('verbose',True)
@@ -313,6 +317,16 @@ class Sequential(Module,MLUtilities,Utilities):
                 print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
             self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
 
+        if self.wt_decay < 0.0:
+            if self.verbose:
+                print("wt_decay must be non-negative in Sequential(). Setting to zero.")
+            self.wt_decay = 0.0 # safest is 0.0 if user is unsure about role of weight decay
+            
+        if self.decay_norm not in [1,2]:
+            if self.verbose:
+                print("decay_norm must be one of [1,2] in Sequential(). Setting to 2.")
+            self.decay_norm = 2 # safest is 2 if user is unsure about role of decay norm
+
     def forward(self,Xt): # update activations
         for m in self.modules:
             Xt = m.forward(Xt)
@@ -325,8 +339,19 @@ class Sequential(Module,MLUtilities,Utilities):
             
     def sgd_step(self,t,lrate): # update weights (GD update)
         for m in self.modules:
-            m.sgd_step(t,lrate)
+            m.sgd_step(t,lrate,wt_decay=self.wt_decay,decay_norm=self.decay_norm)
         return
+
+    def calc_loss_decay(self):
+        decay_loss = 0.0
+        if self.decay_norm == 2:
+            for m in self.modules:
+                decay_loss += np.sum(m.W**2) if m.W is not None else 0.0
+        elif self.decay_norm == 1:
+            for m in self.modules:
+                decay_loss += np.sum(np.fabs(m.W)) if m.W is not None else 0.0
+        decay_loss *= self.wt_decay
+        return decay_loss
 
     def train(self,X,Y,params={}):
         """ Main routine for training.
@@ -407,13 +432,15 @@ class Sequential(Module,MLUtilities,Utilities):
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
+                if self.wt_decay > 0.0:
+                    batch_loss += self.calc_loss_decay()
                 self.epoch_loss[t] += batch_loss
                 dLdZ = self.loss.backward() # loss.backward returns last dLdZ not dLdA
 
                 self.backward(dLdZ) # update gradients
                 # self.backward skips last activation, since loss.backward gives last dLdZ
 
-                self.sgd_step(t,lrate) # gradient descent update
+                self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
 
             # validation check
             if n_val > 0:

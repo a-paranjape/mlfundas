@@ -200,7 +200,7 @@ class BatchNorm(Module,MLUtilities):
 
         return dLdX
 
-    def sgd_step(self,t,lrate):
+    def sgd_step(self,t,lrate,wt_decay=0.0,decay_norm=2):
         if self.adam:
             corr_B1 = 1-self.B1_adam**(1+t) 
             corr_B2 = 1-self.B2_adam**(1+t)
@@ -209,6 +209,11 @@ class BatchNorm(Module,MLUtilities):
         else:
             dW = self.dLdW
             dW0 = self.dLdW0
+        if wt_decay > 0.0:
+            if decay_norm == 2:
+                self.W *= (1 - lrate*wt_decay) # eqn 7.5 of DeepLearning book
+            elif decay_norm == 1:
+                self.W -= wt_decay*np.sign(self.W) # eqn 7.20 of DeepLearning book
         self.W -= lrate*dW
         self.W0 -= lrate*dW0
         return 
@@ -338,7 +343,7 @@ class Linear(Module,MLUtilities):
         
         return dLdA
 
-    def sgd_step(self,t,lrate):
+    def sgd_step(self,t,lrate,wt_decay=0.0,decay_norm=2):
         if self.adam:
             corr_B1 = 1-self.B1_adam**(1+t) 
             corr_B2 = 1-self.B2_adam**(1+t)
@@ -347,6 +352,11 @@ class Linear(Module,MLUtilities):
         else:
             dW = self.dLdW
             dW0 = self.dLdW0
+        if wt_decay > 0.0:
+            if decay_norm == 2:
+                self.W *= (1 - lrate*wt_decay) # eqn 7.5 of DeepLearning book
+            elif decay_norm == 1:
+                self.W -= wt_decay*np.sign(self.W) # eqn 7.20 of DeepLearning book
         self.W -= lrate*dW
         self.W0 -= lrate*dW0
         return 
