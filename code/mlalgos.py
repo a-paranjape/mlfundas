@@ -259,9 +259,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 self.print_this("... ... using batch normalization",self.logfile)
             else:
                 self.print_this("... ... not using any regularization",self.logfile)
-            if self.wt_decay > 0.0:
-                self.print_this("... ... using weight decay with coefficient {0:.3e} and norm {1:d}".format(self.wt_decay,self.decay_norm),
-                                self.logfile)
+            self.print_this("... ... using weight decay with coefficient {0:.3e} and norm {1:d}".format(self.wt_decay,self.decay_norm),self.logfile)
             
         self.modules = mod
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
