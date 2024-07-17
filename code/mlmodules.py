@@ -332,8 +332,9 @@ class Linear(Module,MLUtilities):
         # dLdZ (n_next,b)
         dLdA = np.dot(self.W,dLdZ) # (n_this,n_next).(n_next,b) = (n_this,b)
 
-        self.dLdW = np.sum([np.dot(self.A[:,i:i+1],dLdZ[:,i:i+1].T) for i in range(self.A.shape[1])], axis=0) # (n_this,n_next)
-        # !! FIND BETTER WAY OF DOING ABOVE STEP !! maybe np.tensordot?
+        # self.dLdW = np.sum([np.dot(self.A[:,i:i+1],dLdZ[:,i:i+1].T) for i in range(self.A.shape[1])], axis=0) # (n_this,n_next)
+        # # !! FIND BETTER WAY OF DOING ABOVE STEP !! maybe np.tensordot?
+        self.dLdW = np.tensordot(self.A,dLdZ.T,axes=1)
         self.dLdW0 = np.sum(dLdZ,axis=-1,keepdims=True) # (n_next,1)
         if self.adam:
             self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
