@@ -14,7 +14,7 @@ class Module(object):
         self.is_norm = False # helps identify normalization modules
     
     # these methods do nothing for modules without weights    
-    def sgd_step(self,t,lrate):
+    def sgd_step(self,t,lrate,wt_decay=0.0,decay_norm=2):
         return
 
     def save(self):
