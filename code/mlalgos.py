@@ -265,7 +265,7 @@ class Sequential(Module,MLUtilities,Utilities):
             else:
                 self.print_this("... ... not using any weight decay",self.logfile)
             
-        self.modules = mod
+        self.modules = mod            
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
         self.modules[-1].net_type = self.net_type # set last activation module net_type
 
