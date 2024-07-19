@@ -221,6 +221,8 @@ class Sequential(Module,MLUtilities,Utilities):
         
         self.check_init()
 
+        ####################################################
+        # port this block to its own function called Modulate sitting in mlmodules.py
         mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam,layer=1)]
         for l in range(1,self.L+1):
             if self.atypes[l-1] == 'relu':
@@ -242,6 +244,10 @@ class Sequential(Module,MLUtilities,Utilities):
                 elif self.reg_fun == 'bn':
                     mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng,adam=self.adam,layer=l+1))
                 mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam,layer=l+1))
+        ####################################################
+        # use output of modulator
+        self.modules = mod            
+        ####################################################
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -265,7 +271,6 @@ class Sequential(Module,MLUtilities,Utilities):
             else:
                 self.print_this("... ... not using any weight decay",self.logfile)
             
-        self.modules = mod            
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
         self.modules[-1].net_type = self.net_type # set last activation module net_type
 
@@ -452,9 +457,14 @@ class Sequential(Module,MLUtilities,Utilities):
                 Ypred_val = self.forward(X_val) # update activations. prediction for validation data
                 self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
                 if t > check_after:
-                    chk_half = (self.val_loss[t] > self.val_loss[t-check_after//2])
-                    chk = (self.val_loss[t-check_after//2] > self.val_loss[t-check_after])
-                    if chk_half & chk:
+                    x = np.arange(t-check_after,t+1)
+                    y = self.val_loss[x].copy()
+                    xbar = np.mean(x)
+                    slope = (np.mean(x*y)-xbar*np.mean(y))/(np.mean(x**2) - xbar**2 + 1e-15) # best fit slope
+                    # chk_half = (self.val_loss[t] > 1.0*self.val_loss[t-check_after//2])
+                    # chk = (self.val_loss[t-check_after//2] > 1.0*self.val_loss[t-check_after])
+                    # if chk_half & chk:
+                    if slope > 0.0:
                         if self.verbose:
                             self.print_this('',self.logfile)
                         break
