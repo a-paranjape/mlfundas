@@ -459,12 +459,12 @@ class Sequential(Module,MLUtilities,Utilities):
                 if t > check_after:
                     x = np.arange(t-check_after,t+1)
                     y = self.val_loss[x].copy()
-                    xbar = np.mean(x)
-                    slope = (np.mean(x*y)-xbar*np.mean(y))/(np.mean(x**2) - xbar**2 + 1e-15) # best fit slope
+                    # xbar = np.mean(x)
+                    # slope = (np.mean(x*y)-xbar*np.mean(y))/(np.mean(x**2) - xbar**2 + 1e-15) # best fit slope
                     # chk_half = (self.val_loss[t] > 1.0*self.val_loss[t-check_after//2])
                     # chk = (self.val_loss[t-check_after//2] > 1.0*self.val_loss[t-check_after])
                     # if chk_half & chk:
-                    if slope > 0.0:
+                    if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
                         if self.verbose:
                             self.print_this('',self.logfile)
                         break
