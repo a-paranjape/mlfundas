@@ -220,34 +220,9 @@ class Sequential(Module,MLUtilities,Utilities):
             self.print_this("... setting up {0:d} layer feed-forward neural network".format(self.L),self.logfile)
         
         self.check_init()
-
-        ####################################################
-        # port this block to its own function called Modulate sitting in mlmodules.py
-        mod = [Linear(self.n0,self.n_layer[0],rng=self.rng,adam=self.adam,layer=1)]
-        for l in range(1,self.L+1):
-            if self.atypes[l-1] == 'relu':
-                mod.append(ReLU(layer=l+1))
-            elif self.atypes[l-1] == 'tanh':
-                mod.append(Tanh(layer=l+1))
-            elif self.atypes[l-1] == 'sigm':
-                mod.append(Sigmoid(layer=l+1))
-            elif self.atypes[l-1] == 'lin':
-                mod.append(Identity(layer=l+1))
-            elif self.atypes[l-1] == 'sm':
-                mod.append(SoftMax(layer=l+1))
-            elif self.atypes[l-1][:6] == 'custom':
-                mod.append(self.custom_atypes[self.atypes[l-1]])
-                
-            if l < self.L:
-                if self.reg_fun == 'drop':
-                    mod.append(DropNorm(p_drop=self.p_drop,rng=self.rng,layer=l+1))
-                elif self.reg_fun == 'bn':
-                    mod.append(BatchNorm(self.n_layer[l-1],rng=self.rng,adam=self.adam,layer=l+1))
-                mod.append(Linear(self.n_layer[l-1],self.n_layer[l],rng=self.rng,adam=self.adam,layer=l+1))
-        ####################################################
-        # use output of modulator
-        self.modules = mod            
-        ####################################################
+        
+        # output of Modulator
+        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes)
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)

@@ -379,3 +379,34 @@ class Linear(Module,MLUtilities):
         return
 #################################
 
+#################################
+def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes):
+    """ Simple utility to produce modules for use in feed-forward networks. 
+        Assumes all inputs have been checked. 
+        Returns list of instantiated modules.
+    """
+    L = len(atypes)
+    mod = [Linear(n0,n_layer[0],rng=rng,adam=adam,layer=1)]
+    for l in range(1,L+1):
+        if atypes[l-1] == 'relu':
+            mod.append(ReLU(layer=l+1))
+        elif atypes[l-1] == 'tanh':
+            mod.append(Tanh(layer=l+1))
+        elif atypes[l-1] == 'sigm':
+            mod.append(Sigmoid(layer=l+1))
+        elif atypes[l-1] == 'lin':
+            mod.append(Identity(layer=l+1))
+        elif atypes[l-1] == 'sm':
+            mod.append(SoftMax(layer=l+1))
+        elif atypes[l-1][:6] == 'custom':
+            mod.append(custom_atypes[atypes[l-1]])
+
+        if l < L:
+            if reg_fun == 'drop':
+                mod.append(DropNorm(p_drop=p_drop,rng=rng,layer=l+1))
+            elif reg_fun == 'bn':
+                mod.append(BatchNorm(n_layer[l-1],rng=rng,adam=adam,layer=l+1))
+            mod.append(Linear(n_layer[l-1],n_layer[l],rng=rng,adam=adam,layer=l+1))
+
+    return mod
+#################################
