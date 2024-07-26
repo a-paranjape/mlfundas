@@ -1218,7 +1218,7 @@ class BiSequential(Module,MLUtilities,Utilities):
     def extract_basis(self):
         """ Extract output of NNa as collection of basis functions. Returns instance of Sequential. """
         if self.verbose:
-            self.print_this("... extracting basis functions",self.logfile)
+            self.print_this("... extracting basis functions from NNa",self.logfile)
         params_setup = copy.deepcopy(self.params)
         params_setup['L'] = params_setup['La']
         params_setup['n_layer'] = params_setup['n_layer_a']
@@ -1234,7 +1234,7 @@ class BiSequential(Module,MLUtilities,Utilities):
     def extract_coeffs(self):
         """ Extract output of NNw as collection of coefficients. Returns instance of Sequential. """
         if self.verbose:
-            self.print_this("... extracting coefficients",self.logfile)
+            self.print_this("... extracting coefficients from NNw",self.logfile)
         params_setup = copy.deepcopy(self.params)
         params_setup['L'] = params_setup['Lw']
         params_setup['n_layer'] = params_setup['n_layer_w']
