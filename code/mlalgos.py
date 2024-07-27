@@ -691,7 +691,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         ts_this = 1e30
         teststat = 1e25
         if self.verbose:
-            self.print_this("... cycling over {0:d} possible options".format(cnt_max),self.logfile)
+            self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
+                            .format(self.n_iter,cnt_max//self.n_iter),self.logfile)
         # compare_Y = self.rv(np.ones(self.n_test))
         for ll in range(layers.size):
             L = layers[ll]
