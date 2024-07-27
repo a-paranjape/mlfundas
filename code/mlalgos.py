@@ -672,7 +672,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.arch_type is None:
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
-            lrates = np.array([0.001,0.003,0.01,0.03]) #np.array([0.001,0.003,0.01])
+            lrates = np.array([0.001,0.003,0.01,0.03,0.1]) #np.array([0.001,0.003,0.01])
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
