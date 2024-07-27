@@ -623,8 +623,8 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.train_frac = 0.5
 
         if self.arch_type is not None:
-            if self.arch_type not in ['emulator']:
-                raise ValueError("arch_type must be None or one of ['emulator'] in BuildNN.")
+            if self.arch_type not in ['emulator','no_reg']:
+                raise ValueError("arch_type must be None or one of ['emulator','no_reg'] in BuildNN.")
             
         return
 
@@ -667,8 +667,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac}
         
-        if self.arch_type is None:
-            reg_funs = ['none','bn']
+        if self.arch_type in [None,'no_reg']:
+            reg_funs = ['none']
+            if self.arch_type is None:
+                reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.005,0.01,0.05,0.1]) #np.array([0.001,0.003,0.01])
             ptrn['check_after'] = 50
