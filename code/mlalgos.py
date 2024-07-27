@@ -673,7 +673,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.001,0.003,0.01,0.03]) #np.array([0.001,0.003,0.01])
-            ptrn['check_after'] = 50
+            ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
             layers = np.array([2,3])
