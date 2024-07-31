@@ -558,7 +558,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
-                 min_layer=1,max_layer=6,max_ex=2,target_test_stat=1e-2,loss_type='square',neg_labels=True,arch_type=None,
+                 min_layer=1,max_layer=6,max_ex=2,target_test_stat=1e-2,loss_type='square',neg_labels=True,arch_type=None,wt_decays=[0.0],
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
@@ -575,6 +575,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.arch_type = arch_type # if not None, string describing architecture type to explore. currently accepts 'emulator'
+        self.wt_decays = wt_decays
         self.seed = seed
         self.file_stem = file_stem
         self.verbose = verbose
@@ -625,6 +626,11 @@ class BuildNN(Module,MLUtilities,Utilities):
         if self.arch_type is not None:
             if self.arch_type not in ['emulator','no_reg']:
                 raise ValueError("arch_type must be None or one of ['emulator','no_reg'] in BuildNN.")
+
+        if len(self.wt_decays) < 1:
+            if self.verbose:
+                print("Warning: wt_decays should be non-empty list. Setting to [0.0]")
+            self.wt_decays = 0.5            
             
         return
 
@@ -673,7 +679,6 @@ class BuildNN(Module,MLUtilities,Utilities):
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.001,0.003,0.01,0.03,0.1]) #np.array([0.001,0.003,0.01])
-            wt_decays = [0.0,0.01,0.1]
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
@@ -687,7 +692,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = self.n_iter*layers.size*len(wt_decays)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         ts_this = 1e30
         teststat = 1e25
@@ -695,7 +700,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
                             .format(self.n_iter,cnt_max//self.n_iter),self.logfile)
         # compare_Y = self.rv(np.ones(self.n_test))
-        for wt_decay in wt_decays:
+        for wt_decay in self.wt_decays:
             pset['wt_decay'] = wt_decay
             for ll in range(layers.size):
                 L = layers[ll]
