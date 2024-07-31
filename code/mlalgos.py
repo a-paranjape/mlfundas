@@ -673,12 +673,13 @@ class BuildNN(Module,MLUtilities,Utilities):
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
             lrates = np.array([0.001,0.003,0.01,0.03,0.1]) #np.array([0.001,0.003,0.01])
+            wt_decays = [0.0,0.1,1.0]
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            layers = np.array([2,3])
-            lrates = np.array([0.001])
-            ptrn['check_after'] = 1000
+            layers = np.array([4,8,12])
+            lrates = np.array([1e-3,1e-4])
+            ptrn['check_after'] = 300
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
@@ -686,7 +687,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = self.n_iter*layers.size*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = self.n_iter*layers.size*len(wt_decays)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         ts_this = 1e30
         teststat = 1e25
@@ -706,40 +707,42 @@ class BuildNN(Module,MLUtilities,Utilities):
                         for last_atype in last_atypes:
                             for htype in hidden_atypes:
                                 pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                for it in range(self.n_iter):
-                                    self.gen_train() # sample training+test data
-                                    net_this = Sequential(params=pset)
-                                    net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                    if net_this.net_type == 'reg':
-                                        resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
-                                        resid = resid.flatten()
-                                        ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
-                                    else:
-                                        ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
-                                        # this is fraction of predictions that are incorrect 
-                                    if not np.isfinite(ts_this):
-                                        ts_this = 1e30
-                                    if ts_this < teststat:
-                                        # store the current best network
-                                        net = copy.deepcopy(net_this)
-                                        params_setup = copy.deepcopy(pset)
-                                        params_setup['verbose'] = self.verbose
-                                        net.verbose = self.verbose
-                                        params_train = copy.deepcopy(ptrn)
-                                        # record current best mean test loss
-                                        teststat = 1.0*ts_this
-                                        # save current best network (weights and setup + train dicts) to file
-                                        net.save()
-                                        self.save_train(params_train)
+                                for wt_decay in wt_decays:
+                                    pset['wt_decay'] = wt_decay
+                                    for it in range(self.n_iter):
+                                        self.gen_train() # sample training+test data
+                                        net_this = Sequential(params=pset)
+                                        net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                        if net_this.net_type == 'reg':
+                                            resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                            resid = resid.flatten()
+                                            ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                        else:
+                                            ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
+                                            # this is fraction of predictions that are incorrect 
+                                        if not np.isfinite(ts_this):
+                                            ts_this = 1e30
+                                        if ts_this < teststat:
+                                            # store the current best network
+                                            net = copy.deepcopy(net_this)
+                                            params_setup = copy.deepcopy(pset)
+                                            params_setup['verbose'] = self.verbose
+                                            net.verbose = self.verbose
+                                            params_train = copy.deepcopy(ptrn)
+                                            # record current best mean test loss
+                                            teststat = 1.0*ts_this
+                                            # save current best network (weights and setup + train dicts) to file
+                                            net.save()
+                                            self.save_train(params_train)
 
-                                    if teststat <= self.target_test_stat:
+                                        if teststat <= self.target_test_stat:
+                                            if self.verbose:
+                                                self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                            return net,params_train,teststat
+
                                         if self.verbose:
-                                            self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                        return net,params_train,teststat
-
-                                    if self.verbose:
-                                        self.status_bar(cnt,cnt_max)
-                                    cnt += 1
+                                            self.status_bar(cnt,cnt_max)
+                                        cnt += 1
 
         # return last stored network, training params and residual test statistic
         return net,params_train,teststat
