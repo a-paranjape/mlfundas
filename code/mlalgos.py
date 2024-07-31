@@ -695,20 +695,20 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
                             .format(self.n_iter,cnt_max//self.n_iter),self.logfile)
         # compare_Y = self.rv(np.ones(self.n_test))
-        for ll in range(layers.size):
-            L = layers[ll]
-            pset['L'] = L
-            for lrate in lrates:
-                ptrn['lrate'] = lrate
-                for ex in self.max_ex_vals: 
-                    pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
-                    for rf in reg_funs:
-                        pset['reg_fun'] = rf
-                        for last_atype in last_atypes:
-                            for htype in hidden_atypes:
-                                pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                for wt_decay in wt_decays:
-                                    pset['wt_decay'] = wt_decay
+        for wt_decay in wt_decays:
+            pset['wt_decay'] = wt_decay
+            for ll in range(layers.size):
+                L = layers[ll]
+                pset['L'] = L
+                for lrate in lrates:
+                    ptrn['lrate'] = lrate
+                    for ex in self.max_ex_vals: 
+                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                        for rf in reg_funs:
+                            pset['reg_fun'] = rf
+                            for last_atype in last_atypes:
+                                for htype in hidden_atypes:
+                                    pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
                                     for it in range(self.n_iter):
                                         self.gen_train() # sample training+test data
                                         net_this = Sequential(params=pset)
