@@ -666,7 +666,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        mb_count = 10
+        mb_count = int(np.sqrt(self.n_train)) #10
         max_epoch = 1000000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
