@@ -574,7 +574,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.target_test_stat = target_test_stat
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
-        self.arch_type = arch_type # if not None, string describing architecture type to explore. currently accepts 'emulator'
+        self.arch_type = arch_type # if not None, string describing architecture type to explore.
+                                   # currently accepts ['emulator','no_reg','autoenc']
         self.wt_decays = wt_decays
         self.seed = seed
         self.file_stem = file_stem
@@ -624,8 +625,10 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.train_frac = 0.5
 
         if self.arch_type is not None:
-            if self.arch_type not in ['emulator','no_reg']:
-                raise ValueError("arch_type must be None or one of ['emulator','no_reg'] in BuildNN.")
+            if self.arch_type not in ['emulator','no_reg','autoenc']:
+                raise ValueError("arch_type must be None or one of ['emulator','no_reg','autoenc'] in BuildNN.")
+            if (self.arch_type == 'autoenc') and (not np.isscalar(max_ex)):
+                raise Exception("max_ex should be scalare integer when arch_type is 'autoenc' in BuildNN.")
 
         if len(self.wt_decays) < 1:
             if self.verbose:
@@ -682,9 +685,12 @@ class BuildNN(Module,MLUtilities,Utilities):
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
+            # interpret min_layer,max_layer as min/max depths, and max_ex as smallest basis size
             layers = np.array([4,8,12])
             lrates = np.array([1e-3,1e-4])
             ptrn['check_after'] = 300
+        elif self.arch_type == 'autoenc':
+            pass
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
