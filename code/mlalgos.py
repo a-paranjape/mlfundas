@@ -567,10 +567,16 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.train_frac = train_frac
         self.standardize = standardize
         self.n_iter = n_iter # no. of times to iterate training/test generation
-        self.min_layer = min_layer # min no. of layers
-        self.max_layer = max_layer # max no. of layers
-        self.max_ex = max_ex # max number of extra dimensions (compared to data dimensions) in hidden layers
+
+        # min/max no. of layers (i.e. network depth)
+        self.min_layer = min_layer 
+        self.max_layer = max_layer
+
+        # max number of extra dimensions (compared to data dimensions) in hidden layers
+        # interpreted as number of basis functions (width of last layer) for arch_type = 'autoenc'
+        self.max_ex = max_ex 
         self.max_ex_vals = np.arange(max_ex+1) if np.isscalar(max_ex) else self.max_ex
+        
         self.target_test_stat = target_test_stat
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
@@ -627,8 +633,6 @@ class BuildNN(Module,MLUtilities,Utilities):
         if self.arch_type is not None:
             if self.arch_type not in ['emulator','no_reg','autoenc']:
                 raise ValueError("arch_type must be None or one of ['emulator','no_reg','autoenc'] in BuildNN.")
-            if (self.arch_type == 'autoenc') and (not np.isscalar(max_ex)):
-                raise Exception("max_ex should be scalare integer when arch_type is 'autoenc' in BuildNN.")
 
         if len(self.wt_decays) < 1:
             if self.verbose:
@@ -661,7 +665,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("Initiating search... ",self.logfile)
 
         if self.loss_type in ['square','hinge']:
-            last_atypes = ['lin','tanh'] #if self.arch_type != 'emulator' else ['lin','tanh']
+            last_atypes = ['lin','tanh'] 
         elif self.loss_type == 'nll':
             last_atypes = ['sigm','tanh']
         elif self.loss_type == 'nllm':
@@ -669,7 +673,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
-        mb_count = int(np.sqrt(self.n_train)) #10
+        mb_count = int(np.sqrt(self.n_train)) 
         max_epoch = 1000000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
@@ -681,16 +685,21 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.arch_type is None:
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
-            lrates = np.array([0.001,0.003,0.01,0.03,0.1]) #np.array([0.001,0.003,0.01])
+            lrates = np.array([0.001,0.003,0.01,0.03,0.1]) 
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            # interpret min_layer,max_layer as min/max depths, and max_ex as smallest basis size
-            layers = np.array([4,8,12])
+            # interpret min_layer,max_layer as (min/max depth // 4)
+            layers = 4*np.arange(self.min_layer,self.max_layer+1)
+            # layers = np.array([4,8,12])
             lrates = np.array([1e-3,1e-4])
             ptrn['check_after'] = 300
         elif self.arch_type == 'autoenc':
-            pass
+            # interpret min_layer,max_layer as min/max depth, and max_ex_vals as basis sizes
+            reg_funs = ['none']
+            layers = np.arange(self.min_layer,self.max_layer+1)
+            lrates = np.array([1e-4,3e-4,1e-3])
+            ptrn['check_after'] = 300
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
 
@@ -713,8 +722,11 @@ class BuildNN(Module,MLUtilities,Utilities):
                 pset['L'] = L
                 for lrate in lrates:
                     ptrn['lrate'] = lrate
-                    for ex in self.max_ex_vals: 
-                        pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
+                    for ex in self.max_ex_vals:
+                        if self.arch_type == 'autoenc':
+                            pset['n_layer'] = [int(self.data_dim*(self.data_dim/ex)**(-np.log(l+1)/np.log(L))) for l in range(1,L)] + [self.target_dim]
+                        else:
+                            pset['n_layer'] = [self.data_dim+ex]*(L-1) + [self.target_dim]
                         for rf in reg_funs:
                             pset['reg_fun'] = rf
                             for last_atype in last_atypes:
