@@ -715,11 +715,11 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
                             .format(self.n_iter,cnt_max//self.n_iter),self.logfile)
         # compare_Y = self.rv(np.ones(self.n_test))
-        for wt_decay in self.wt_decays:
-            pset['wt_decay'] = wt_decay
-            for ll in range(layers.size):
-                L = layers[ll]
-                pset['L'] = L
+        for ll in range(layers.size):
+            L = layers[ll]
+            pset['L'] = L
+            for wt_decay in self.wt_decays:
+                pset['wt_decay'] = wt_decay
                 for lrate in lrates:
                     ptrn['lrate'] = lrate
                     for ex in self.max_ex_vals:
