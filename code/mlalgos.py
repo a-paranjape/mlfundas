@@ -558,7 +558,9 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
-                 min_layer=1,max_layer=6,max_ex=2,target_test_stat=1e-2,loss_type='square',neg_labels=True,arch_type=None,wt_decays=[0.0],
+                 min_layer=1,max_layer=6,max_ex=2,lrates=None,
+                 target_test_stat=1e-2,loss_type='square',
+                 neg_labels=True,arch_type=None,wt_decays=[0.0],
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
@@ -571,6 +573,9 @@ class BuildNN(Module,MLUtilities,Utilities):
         # min/max no. of layers (i.e. network depth)
         self.min_layer = min_layer 
         self.max_layer = max_layer
+
+        # self.lrates will be reset by trainNN if lrates is None 
+        self.lrates = lrates
 
         # max number of extra dimensions (compared to data dimensions) in hidden layers
         # interpreted as number of basis functions (width of last layer) for arch_type = 'autoenc'
@@ -685,20 +690,23 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.arch_type is None:
                 reg_funs += ['bn']
             layers = np.arange(self.min_layer,self.max_layer+1)
-            lrates = np.array([0.001,0.003,0.01,0.03,0.1]) 
+            if self.lrates is None:
+                self.lrates = np.array([0.001,0.003,0.01,0.03,0.1]) 
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
             # interpret min_layer,max_layer as (min/max depth // 4)
             layers = 4*np.arange(self.min_layer,self.max_layer+1)
             # layers = np.array([4,8,12])
-            lrates = np.array([1e-3,1e-4])
+            if self.lrates is None:
+                self.lrates = np.array([1e-3,1e-4])
             ptrn['check_after'] = 300
         elif self.arch_type == 'autoenc':
             # interpret min_layer,max_layer as min/max depth, and max_ex_vals as basis sizes
             reg_funs = ['none']
             layers = np.arange(self.min_layer,self.max_layer+1)
-            lrates = np.array([1e-4,3e-4,1e-3])
+            if self.lrates is None:
+                self.lrates = np.array([1e-4,3e-4,1e-3])
             ptrn['check_after'] = 300
             
         hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
@@ -707,7 +715,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*lrates.size*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
         cnt = 0
         ts_this = 1e30
         teststat = 1e25
@@ -720,7 +728,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             pset['L'] = L
             for wt_decay in self.wt_decays:
                 pset['wt_decay'] = wt_decay
-                for lrate in lrates:
+                for lrate in self.lrates:
                     ptrn['lrate'] = lrate
                     for ex in self.max_ex_vals:
                         if self.arch_type == 'autoenc':
