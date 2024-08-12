@@ -35,6 +35,7 @@ class Module(object):
 #################
 class Sigmoid(Module,MLUtilities):
     net_type = 'class'
+    threshold = 0.5
     
     def forward(self,Z):
         self.A = 1/(1+np.exp(-Z))
@@ -46,13 +47,14 @@ class Sigmoid(Module,MLUtilities):
     
     def predict(self):
         out = np.zeros_like(self.A)
-        out[self.A > 0.5] = 1.0
+        out[self.A > self.threshold] = 1.0
         return out
 #################
 
 #################
 class Tanh(Module,MLUtilities):
     net_type = 'reg'
+    threshold = 0.0
     
     def forward(self,Z):
         self.A = np.tanh(Z)
@@ -62,13 +64,14 @@ class Tanh(Module,MLUtilities):
         return dLdA*(1-self.A**2)
     
     def predict(self):
-        return self.A if self.net_type == 'reg' else self.step_fun(self.A)
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
 
 #################
 class ReLU(Module,MLUtilities):
     net_type = 'reg'
+    threshold = 0.0
     
     def forward(self,Z):
         self.A = np.maximum(0.0,Z)
@@ -81,12 +84,13 @@ class ReLU(Module,MLUtilities):
         return dLdZ
     
     def predict(self):
-        return self.A if self.net_type == 'reg' else self.step_fun(self.A)
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
 #################
 class Identity(Module,MLUtilities):
     net_type = 'reg'
+    threshold = 0.0
     
     def forward(self,Z):
         self.A = Z.copy()
@@ -96,12 +100,13 @@ class Identity(Module,MLUtilities):
         return dLdA # dLdZ = dLdA when A = Z.
     
     def predict(self):
-        return self.A if self.net_type == 'reg' else self.step_fun(self.A)
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
 #################
 class SoftMax(Module,MLUtilities):
     net_type = 'class'
+    threshold = 0.5 # not used
     
     def forward(self,Z):
         exp_z = np.exp(Z - np.max(Z)) # (K,n_{sample}) # subtract max inside exp to control overflows, cancels in A.
@@ -380,7 +385,7 @@ class Linear(Module,MLUtilities):
 #################################
 
 #################################
-def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes):
+def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold):
     """ Simple utility to produce modules for use in feed-forward networks. 
         Assumes all inputs have been checked. 
         Returns list of instantiated modules.
@@ -407,6 +412,8 @@ def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes):
             elif reg_fun == 'bn':
                 mod.append(BatchNorm(n_layer[l-1],rng=rng,adam=adam,layer=l+1))
             mod.append(Linear(n_layer[l-1],n_layer[l],rng=rng,adam=adam,layer=l+1))
+        elif threshold is not None:
+            mod[-1].threshold = threshold
 
     return mod
 #################################

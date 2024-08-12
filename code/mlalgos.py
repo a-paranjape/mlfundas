@@ -167,6 +167,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['custom_loss']: dictionary with keys matching 'custom...' entry in params['loss_type']
                                       with items being loss module instances.
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
+            -- params['threshold']: float, controls behaviour of classification prediction. Default None, meaning: 0.5 ('sigm'), 0.0 ('tanh','relu','lin').
             ** Note that, ideally, last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
@@ -196,6 +197,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.loss_type = params.get('loss_type','nll') # loss and last atype must be consistent
         self.custom_loss = params.get('custom_loss',None) 
         self.neg_labels = params.get('neg_labels',True)
+        self.threshold = params.get('threshold',None)
         self.standardize = params.get('standardize',True)
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
@@ -221,7 +223,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulator
-        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes)
+        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold)
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -232,6 +234,7 @@ class Sequential(Module,MLUtilities,Utilities):
                             +','.join([self.atypes[i] for i in range(self.L-1)])
                             +"]",self.logfile)
             self.print_this("... ... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
+            self.print_this("... ... ... with threshold (None means default): "+str(self.threshold),self.logfile)
             self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
             if self.reg_fun == 'drop':
                 self.print_this("... ... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
@@ -558,7 +561,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
-                 min_layer=1,max_layer=6,max_ex=2,lrates=None,
+                 min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=1e-2,loss_type='square',
                  neg_labels=True,arch_type=None,wt_decays=[0.0],
                  seed=None,file_stem='net',verbose=True,logfile=None):
@@ -577,6 +580,9 @@ class BuildNN(Module,MLUtilities,Utilities):
         # self.lrates will be reset by trainNN if lrates is None 
         self.lrates = lrates
 
+        # None or list of floats
+        self.thresholds = [None] if thresholds is None else thresholds
+        
         # max number of extra dimensions (compared to data dimensions) in hidden layers
         # interpreted as number of basis functions (width of last layer) for arch_type = 'autoenc'
         self.max_ex = max_ex 
@@ -715,7 +721,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         params_setup = None
         params_train = None
 
-        cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)*len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes) 
+        cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)
+        cnt_max *= len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes)*len(self.thresholds)
         cnt = 0
         ts_this = 1e30
         teststat = 1e25
@@ -740,40 +747,42 @@ class BuildNN(Module,MLUtilities,Utilities):
                             for last_atype in last_atypes:
                                 for htype in hidden_atypes:
                                     pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-                                    for it in range(self.n_iter):
-                                        self.gen_train() # sample training+test data
-                                        net_this = Sequential(params=pset)
-                                        net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                        if net_this.net_type == 'reg':
-                                            resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
-                                            resid = resid.flatten()
-                                            ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
-                                        else:
-                                            ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
-                                            # this is fraction of predictions that are incorrect 
-                                        if not np.isfinite(ts_this):
-                                            ts_this = 1e30
-                                        if ts_this < teststat:
-                                            # store the current best network
-                                            net = copy.deepcopy(net_this)
-                                            params_setup = copy.deepcopy(pset)
-                                            params_setup['verbose'] = self.verbose
-                                            net.verbose = self.verbose
-                                            params_train = copy.deepcopy(ptrn)
-                                            # record current best mean test loss
-                                            teststat = 1.0*ts_this
-                                            # save current best network (weights and setup + train dicts) to file
-                                            net.save()
-                                            self.save_train(params_train)
+                                    for threshold in self.thresholds:
+                                        pset['threshold'] = threshold
+                                        for it in range(self.n_iter):
+                                            self.gen_train() # sample training+test data
+                                            net_this = Sequential(params=pset)
+                                            net_this.train(self.X_train,self.Y_train,params=ptrn)
+                                            if net_this.net_type == 'reg':
+                                                resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                                resid = resid.flatten()
+                                                ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                            else:
+                                                ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
+                                                # this is fraction of predictions that are incorrect 
+                                            if not np.isfinite(ts_this):
+                                                ts_this = 1e30
+                                            if ts_this < teststat:
+                                                # store the current best network
+                                                net = copy.deepcopy(net_this)
+                                                params_setup = copy.deepcopy(pset)
+                                                params_setup['verbose'] = self.verbose
+                                                net.verbose = self.verbose
+                                                params_train = copy.deepcopy(ptrn)
+                                                # record current best mean test loss
+                                                teststat = 1.0*ts_this
+                                                # save current best network (weights and setup + train dicts) to file
+                                                net.save()
+                                                self.save_train(params_train)
 
-                                        if teststat <= self.target_test_stat:
+                                            if teststat <= self.target_test_stat:
+                                                if self.verbose:
+                                                    self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                                return net,params_train,teststat
+
                                             if self.verbose:
-                                                self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                            return net,params_train,teststat
-
-                                        if self.verbose:
-                                            self.status_bar(cnt,cnt_max)
-                                        cnt += 1
+                                                self.status_bar(cnt,cnt_max)
+                                            cnt += 1
 
         # return last stored network, training params and residual test statistic
         return net,params_train,teststat
@@ -1281,23 +1290,6 @@ class BiSequential(Module,MLUtilities,Utilities):
         for m in range(len(coeffs.modules)):
             coeffs.modules[m] = copy.deepcopy(self.modules_w[m])
         return coeffs
-    
-    # # to be called after invoking self.extract_basis()
-    # def combine_basis(self,basis,coeffs,X):
-    #     """ Simple wrapper to quickly test basis extraction by combining as per last layers of NNa and NNw.
-    #         -- basis: Sequential instance created by self.extract_basis
-    #         -- coeffs: Sequential instance created by self.extract_coeffs
-    #         -- X: input array of shape (n0,n_params) as used for NN (value of n_params can vary).
-    #         Returns final output of NN as (activated) linear combination of basis functions.
-    #     """
-    #     raise NotImplementedError()
-    #     # basis_func = basis.predict(X)
-    #     # Z = self.modules[-2].forward(basis_func)
-    #     # A = self.modules[-1].forward(Z)
-    #     # if self.standardize:
-    #     #     A *= self.Y_std
-    #     #     A += self.Y_mean
-    #     # return A
 
     def calc_N_freeparams(self):
         """ Utility to calculate number of free parameters being optimized. """
