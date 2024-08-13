@@ -676,9 +676,9 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.print_this("Initiating search... ",self.logfile)
 
         if self.loss_type in ['square','hinge']:
-            last_atypes = ['lin','tanh'] 
+            last_atypes = ['lin'] 
         elif self.loss_type == 'nll':
-            last_atypes = ['sigm','tanh']
+            last_atypes = ['sigm']
         elif self.loss_type == 'nllm':
             last_atypes = ['sm']
         else:
