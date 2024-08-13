@@ -701,9 +701,8 @@ class BuildNN(Module,MLUtilities,Utilities):
             ptrn['check_after'] = 100
         elif self.arch_type == 'emulator':
             reg_funs = ['none']
-            # interpret min_layer,max_layer as (min/max depth // 4)
-            layers = 4*np.arange(self.min_layer,self.max_layer+1)
-            # layers = np.array([4,8,12])
+            # interpret min_layer,max_layer as (min/max depth // 2)
+            layers = 2*np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([1e-3,1e-4])
             ptrn['check_after'] = 300
