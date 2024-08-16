@@ -592,7 +592,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.arch_type = arch_type # if not None, string describing architecture type to explore.
-                                   # currently accepts ['emulator','no_reg','autoenc']
+                                   # currently accepts ['emulator:deep','emulator:shallow','no_reg','autoenc']
         self.wt_decays = wt_decays
         self.seed = seed
         self.file_stem = file_stem
@@ -642,8 +642,8 @@ class BuildNN(Module,MLUtilities,Utilities):
             self.train_frac = 0.5
 
         if self.arch_type is not None:
-            if self.arch_type not in ['emulator','no_reg','autoenc']:
-                raise ValueError("arch_type must be None or one of ['emulator','no_reg','autoenc'] in BuildNN.")
+            if self.arch_type not in ['emulator:deep','emulator:shallow','no_reg','autoenc']:
+                raise ValueError("arch_type must be None or one of ['emulator:deep','emulator:shallow','no_reg','autoenc'] in BuildNN.")
 
         if len(self.wt_decays) < 1:
             if self.verbose:
@@ -699,10 +699,17 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.lrates is None:
                 self.lrates = np.array([0.001,0.003,0.01,0.03,0.1]) 
             ptrn['check_after'] = 100
-        elif self.arch_type == 'emulator':
+        elif self.arch_type == 'emulator:deep':
             reg_funs = ['none']
-            # interpret min_layer,max_layer as (min/max depth // 2)
-            layers = 2*np.arange(self.min_layer,self.max_layer+1)
+            # interpret min_layer,max_layer as (min/max depth // 4)
+            layers = 4*np.arange(self.min_layer,self.max_layer+1)
+            if self.lrates is None:
+                self.lrates = np.array([1e-3,1e-4])
+            ptrn['check_after'] = 300
+        elif self.arch_type == 'emulator:shallow':
+            reg_funs = ['none']
+            # interpret min_layer,max_layer as min/max depth
+            layers = np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([1e-3,1e-4])
             ptrn['check_after'] = 300
