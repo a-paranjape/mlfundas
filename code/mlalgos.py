@@ -711,7 +711,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             # interpret min_layer,max_layer as min/max depth
             layers = np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
-                self.lrates = np.array([1e-3,1e-4])
+                self.lrates = np.array([1e-5,1e-4,1e-3])
             ptrn['check_after'] = 300
         elif self.arch_type == 'autoenc':
             # interpret min_layer,max_layer as min/max depth, and max_ex_vals as basis sizes
