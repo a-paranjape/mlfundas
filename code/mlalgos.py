@@ -720,8 +720,13 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.lrates is None:
                 self.lrates = np.array([1e-4,3e-4,1e-3])
             ptrn['check_after'] = 300
-            
-        hidden_atypes = ['tanh','relu'] if layers.max() > 1 else [None]
+
+        if layers.max() == 1:
+            hidden_atypes = [None]
+        else:
+            hidden_atypes = ['tanh'] 
+            if self.arch_type != 'emulator:shallow':
+                hidden_atypes.append('relu')
 
         net = None
         params_setup = None
