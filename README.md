@@ -1,11 +1,15 @@
 # Fundamentals of Machine Learning
 
-Modules implementing basic machine learning algorithms for classification and regression, including `Perceptron`, logistic regression, support vector machines, ridge regression and standard feed-forward neural network (NN) with error back-propagation using `stochastic gradient descent`.
+Modules implementing basic machine learning algorithms for classification and regression, including Perceptron and standard feed-forward neural network (NN). Training of NNs uses error back-propagation with stochastic gradient descent and optional Adam optimization.
 
 ## Code organization
 * `mllib`: basic utilities for array manipulation and algorithm evaluation.
 * `mlmodules`: building-block modules (activation, loss, regularization, linear).
-* `mlalgos`: algorithms -- `Perceptron`, fully-connected feed-forward NN (subsets of this are logistic regression, support vector machine, ridge regression), wrapper to systematically search over (restricted) class of NNs.
+* `mlalgos`: algorithms
+    * `Perceptron` -- classic linear classification.
+    * `Sequential` -- fully-connected feed-forward NN (subsets of this are logistic regression, support vector machine, ridge regression).
+    * `BuildNN` -- wrapper to systematically search over various classes of NN architecture.
+    * `BiSequential` -- architecture to approximate functions $f(x,\theta)$ using a separable basis of the form $\hat f(x,\theta) = \sum_{i=1}^{n} b_i(x) w_i(\theta)$.
 * `mlseq`: sequential algorithms (state machines, recurrent NN, Markov decision process, ...). **UNDER CONSTRUCTION**
 * `utilities`: provides various utility modules for i/o and simple tools.
 
