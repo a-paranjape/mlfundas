@@ -1293,6 +1293,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this("... extracting coefficients from NNw",self.logfile)
         params_setup = copy.deepcopy(self.params)
+        params_setup['data_dim'] = params_setup['theta_dim']
         params_setup['L'] = params_setup['Lw']
         params_setup['n_layer'] = params_setup['n_layer_w']
         params_setup['atypes'] = params_setup['atypes_w']
@@ -1300,6 +1301,8 @@ class BiSequential(Module,MLUtilities,Utilities):
         coeffs = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(coeffs.modules)):
             coeffs.modules[m] = copy.deepcopy(self.modules_w[m])
+
+        # note that result needs to be modified in case original standardization is True. see examples/BiSequential.ipynb.
         return coeffs
 
     def calc_N_freeparams(self):
