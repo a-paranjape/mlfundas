@@ -237,7 +237,7 @@ class Sequential(Module,MLUtilities,Utilities):
             self.print_this("... ... ... with threshold (None means default): "+str(self.threshold),self.logfile)
             self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
             if self.reg_fun == 'drop':
-                self.print_this("... ... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
+                self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             elif self.reg_fun == 'bn':
                 self.print_this("... ... using batch normalization",self.logfile)
             else:
