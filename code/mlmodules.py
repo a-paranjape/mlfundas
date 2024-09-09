@@ -148,7 +148,8 @@ class DropNorm(Module,MLUtilities):
 
     def backward(self,dLdA):
         dLdZ = dLdA.copy()
-        dLdZ[self.u < self.p_drop] = 0.0 # zero out gradients for dropped units
+        if self.drop:
+            dLdZ[self.u < self.p_drop] = 0.0 # zero out gradients for dropped units
         return dLdZ
 
 #################################
