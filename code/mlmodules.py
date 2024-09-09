@@ -137,9 +137,9 @@ class DropNorm(Module,MLUtilities):
         self.is_norm = True
 
     def drop_fun(self,A):
-        u = self.rng.rand(A.shape[0],A.shape[1])
+        self.u = self.rng.rand(A.shape[0],A.shape[1])
         drop = np.ones_like(A)
-        drop[u < self.p_drop] = 0.0 # since probab to drop is specified
+        drop[self.u < self.p_drop] = 0.0 # since probab to drop is specified
         return A*drop
     
     def forward(self,A): # will always follow activation layer
@@ -147,7 +147,9 @@ class DropNorm(Module,MLUtilities):
         return self.A # (K,n_{sample})
 
     def backward(self,dLdA):
-        return dLdA # does nothing
+        dLdZ = dLdA.copy()
+        dLdZ[self.u < self.p_drop] = 0.0 # zero out gradients for dropped units
+        return dLdZ
 
 #################################
 
