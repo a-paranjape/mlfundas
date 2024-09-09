@@ -944,7 +944,7 @@ class BiSequential(Module,MLUtilities,Utilities):
                             +"]",self.logfile)
             self.print_this("... ... using loss function 'square'",self.logfile)
             if self.reg_fun == 'drop':
-                self.print_this("... ... using drop regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
+                self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             elif self.reg_fun == 'bn':
                 self.print_this("... ... using batch normalization",self.logfile)
             else:
@@ -1201,6 +1201,22 @@ class BiSequential(Module,MLUtilities,Utilities):
             
             if self.verbose:
                 self.status_bar(t,max_epoch)
+
+        if self.reg_fun == 'drop':
+            if self.verbose:
+                self.print_this("... correcting for drop regularization",self.logfile)
+            # convert DropNorm layers to effectively Identity
+            for m in self.modules_a[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.drop = False
+            for m in self.modules_w[2::3]: 
+                m.drop = False
+                
+            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
+            # biases untouched.
+            for m in self.modules_a[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.W *= (1-self.p_drop)
+            for m in self.modules_w[::3]: 
+                m.W *= (1-self.p_drop)
                 
         if self.verbose:
             self.print_this("... ... done",self.logfile)
