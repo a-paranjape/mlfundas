@@ -128,9 +128,10 @@ class SoftMax(Module,MLUtilities):
 # possible normalizations
 #################
 class DropNorm(Module,MLUtilities):
-    def __init__(self,layer=1,p_drop=0.2,rng=None):
+    def __init__(self,layer=1,p_drop=0.2,rng=None,drop=True):
         self.layer = layer # for compatibility with weighted modules
         self.p_drop = p_drop
+        self.drop = drop
         self.rng = np.random.RandomState() if rng is None else rng
         self.layer = layer # useful for tracking save/read filenames
         self.is_norm = True
@@ -142,7 +143,7 @@ class DropNorm(Module,MLUtilities):
         return A*drop
     
     def forward(self,A): # will always follow activation layer
-        self.A = self.drop_fun(A) 
+        self.A = self.drop_fun(A) if self.drop else A
         return self.A # (K,n_{sample})
 
     def backward(self,dLdA):

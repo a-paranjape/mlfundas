@@ -449,14 +449,16 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.status_bar(t,max_epoch)
 
-        # if self.reg_fun == 'drop':
-        #     if self.verbose:
-        #         self.print_this("... correcting for drop regularization",self.logfile)
-        #     # multiply all weights by 1-p_drop. ** CHECK THIS ** (ML course says p, not 1-p!)
-        #     # biases untouched.
-        #     for m in self.modules[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-        #         m.W *= (1-self.p_drop)
-        # # commented out since forward method will always drop some activations when called by predict, so this would over-correct.
+        if self.reg_fun == 'drop':
+            if self.verbose:
+                self.print_this("... correcting for drop regularization",self.logfile)
+            # convert DropNorm layers to effectively Identity
+            for m in self.modules[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.drop = False
+            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
+            # biases untouched.
+            for m in self.modules[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.W *= (1-self.p_drop)
                 
         if self.verbose:
             self.print_this("... ... done",self.logfile)
