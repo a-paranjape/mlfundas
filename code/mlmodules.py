@@ -255,7 +255,7 @@ class NLL(Module,MLUtilities):
         self.Y = Y
         self.Y[self.Y < 0] = 0.0 # ensure only 0 or 1 passed as Y
         self.Ypred[self.Ypred < 0] = 0.0 # ensure only 0 or 1 passed as Ypred
-        Loss = -Y*np.log(Ypred + 1e-15) - (1-Y)*np.log(1-Ypred + 1e-15)
+        Loss = -self.Y*np.log(self.Ypred + 1e-15) - (1-self.Y)*np.log(1-self.Ypred + 1e-15)
         return np.sum(Loss) # scalar
 
     def backward(self):
@@ -268,7 +268,7 @@ class NLLM(Module,MLUtilities):
     def forward(self,Ypred,Y):
         self.Ypred = Ypred # (n_last,b), no check.
         self.Y = Y # no check. user must ensure only integers 0..K-1 passed for K categories
-        Loss = np.sum(-Y*np.log(Ypred + 1e-15),axis=0,keepdims=True) # (1,b)
+        Loss = np.sum(-self.Y*np.log(self.Ypred + 1e-15),axis=0,keepdims=True) # (1,b)
         return np.sum(Loss) # (1,1)
 
     def backward(self):
