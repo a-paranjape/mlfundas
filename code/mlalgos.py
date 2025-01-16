@@ -564,7 +564,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
-                 target_test_stat=1e-2,loss_type='square',
+                 target_test_stat=1e-2,loss_type='square',test_type='perc',
                  neg_labels=True,arch_type=None,wt_decays=[0.0],
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -574,6 +574,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.train_frac = train_frac
         self.standardize = standardize
         self.n_iter = n_iter # no. of times to iterate training/test generation
+        self.test_type = test_type # type of test for hyperparam search: either 'perc' (residual percentiles) or 'mse' (mean squared error)
 
         # min/max no. of layers (i.e. network depth)
         self.min_layer = min_layer 
@@ -618,7 +619,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                             .format(self.n_samp),self.logfile)
             self.print_this("... fraction {0:.3f} ({1:d} samples) will be used for training"
                             .format(self.train_frac,self.n_train),self.logfile)
-            self.print_this("... setting up training and test samples",self.logfile)
+            if self.test_type == 'perc':
+                self.print_this("... will use residual percentiles for hyperparameter comparison",self.logfile)
+            else:
+                self.print_this("... will use mean squared error for hyperparameter comparison",self.logfile)
         
         self.rng = np.random.RandomState(self.seed)
         
@@ -649,8 +653,13 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         if len(self.wt_decays) < 1:
             if self.verbose:
-                print("Warning: wt_decays should be non-empty list. Setting to [0.0]")
-            self.wt_decays = 0.5            
+                print("Warning: wt_decays should be non-empty list. Setting to [0.0].")
+            self.wt_decays = 0.5
+
+        if (self.loss_type == 'square') & (self.test_type not in ['perc','mse']):
+            if self.verbose:
+                print("Warning: test_type for regression should be one of ['perc','mse'] in BuildNN(). Setting to 'perc'.")
+            self.test_type = 'perc'
             
         return
 
@@ -767,9 +776,12 @@ class BuildNN(Module,MLUtilities,Utilities):
                                             net_this = Sequential(params=pset)
                                             net_this.train(self.X_train,self.Y_train,params=ptrn)
                                             if net_this.net_type == 'reg':
-                                                resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
-                                                resid = resid.flatten()
-                                                ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                                if self.test_type == 'perc':
+                                                    resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
+                                                    resid = resid.flatten()
+                                                    ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                                else:
+                                                    ts_this = np.sum((net_this.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
                                             else:
                                                 ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
                                                 # this is fraction of predictions that are incorrect 
