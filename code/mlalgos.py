@@ -779,7 +779,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                                 if self.test_type == 'perc':
                                                     resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
                                                     resid = resid.flatten()
-                                                    ts_this = 0.5*(np.percentile(resid,84) - np.percentile(resid,16))
+                                                    ts_this = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
                                                 else:
                                                     ts_this = np.sum((net_this.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
                                             else:
