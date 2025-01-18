@@ -564,7 +564,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
-                 target_test_stat=1e-2,loss_type='square',test_type='perc',
+                 target_test_stat=1e-2,loss_type='square',test_type='perc',htypes=None,
                  neg_labels=True,arch_type=None,wt_decays=[0.0],
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -575,6 +575,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.standardize = standardize
         self.n_iter = n_iter # no. of times to iterate training/test generation
         self.test_type = test_type # type of test for hyperparam search: either 'perc' (residual percentiles) or 'mse' (mean squared error)
+        self.htypes = htypes # None or list of strings. Control which hidden layer activations to search over
 
         # min/max no. of layers (i.e. network depth)
         self.min_layer = min_layer 
@@ -660,6 +661,18 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning: test_type for regression should be one of ['perc','mse'] in BuildNN(). Setting to 'perc'.")
             self.test_type = 'perc'
+
+        if self.htypes is not None:
+            if not isinstance(self.htypes,list):
+                print("Warning: htypes should be None or list of strings in BuildNN(). Setting to None.")
+                self.htypes = None
+            good_htype = True
+            for h in range(len(self.htypes)):
+                if self.htypes[h] not in ['tanh','relu']:
+                    good_htype = False
+            if not good_htype:
+                print("Warning: htypes list should be subset of ['tanh','relu'] in BuildNN(). Setting htypes to None.")
+                self.htypes = None
             
         return
 
@@ -735,9 +748,13 @@ class BuildNN(Module,MLUtilities,Utilities):
         if layers.max() == 1:
             hidden_atypes = [None]
         else:
-            hidden_atypes = ['tanh'] 
-            if self.arch_type != 'emulator:shallow':
-                hidden_atypes.append('relu')
+            if self.htypes is None:
+                # default behaviour
+                hidden_atypes = ['tanh'] 
+                if self.arch_type != 'emulator:shallow':
+                    hidden_atypes.append('relu')
+            else:
+                hidden_atypes = self.htypes
 
         net = None
         params_setup = None
