@@ -482,6 +482,12 @@ class Sequential(Module,MLUtilities,Utilities):
             # convert 0 to -1 if needed.
             Ypred[Ypred < 1e-4] = -1.0
         return Ypred
+    
+    def gradient(self): # calculate gradient of output wrt input
+        grad = np.eye(self.n_layer[-1])
+        for m in self.modules[-1::-1]:
+            grad = m.backward(grad,grad=True)
+        return grad
 
     def save(self):
         """ Save current weights and setup params to file(s). """
@@ -1365,4 +1371,14 @@ class BiSequential(Module,MLUtilities,Utilities):
             
         return N
     
+#################################
+
+
+#################################
+# Generative adversarial network (using Sequential instances for now)
+#################
+class GAN(Module,MLUtilities,Utilities):
+    def __init__(self,params={}):
+
+
 #################################

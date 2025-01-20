@@ -27,7 +27,7 @@ class Module(object):
     def forward(self,A):
         raise NotImplementedError
     
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=False): 
         raise NotImplementedError
     
 #################################
@@ -41,7 +41,7 @@ class Sigmoid(Module,MLUtilities):
         self.A = 1/(1+np.exp(-Z))
         return self.A
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
         dLdZ = self.A*(1-self.A)*dLdA
         return dLdZ
     
@@ -60,7 +60,7 @@ class Tanh(Module,MLUtilities):
         self.A = np.tanh(Z)
         return self.A
 
-    def backward(self,dLdA):     
+    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
         return dLdA*(1-self.A**2)
     
     def predict(self):
@@ -77,7 +77,7 @@ class ReLU(Module,MLUtilities):
         self.A = np.maximum(0.0,Z)
         return self.A
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
         dLdZ = np.zeros_like(self.A)
         dLdZ[self.A > 0.0] = 1.0
         dLdZ *= dLdA
@@ -96,7 +96,7 @@ class Identity(Module,MLUtilities):
         self.A = Z.copy()
         return self.A
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
         return dLdA # dLdZ = dLdA when A = Z.
     
     def predict(self):
@@ -113,7 +113,7 @@ class SoftMax(Module,MLUtilities):
         self.A = exp_z/np.sum(exp_z,axis=0)
         return self.A # (K,n_{sample})
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
         dLdZ = self.A*(1-self.A)*dLdA # formally same as backward of Sigmoid()
         return dLdZ
 
@@ -146,10 +146,13 @@ class DropNorm(Module,MLUtilities):
         self.A = self.drop_fun(A) if self.drop else A
         return self.A # (K,n_{sample})
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=False):
         dLdZ = dLdA.copy()
-        if self.drop:
-            dLdZ[self.u < self.p_drop] = 0.0 # zero out gradients for dropped units
+        if not grad:
+            if self.drop:
+                dLdZ[self.u < self.p_drop] = 0.0 # zero out gradients for dropped units
+        # else:
+        #     pass # if gradient wrt input requested then do nothing
         return dLdZ
 
 #################################
@@ -191,21 +194,24 @@ class BatchNorm(Module,MLUtilities):
 
         return self.W*self.norm + self.W0 # scaled, shifted output
 
-    def backward(self,dLdA):
+    def backward(self,dLdA,grad=False):
         # dLdX_{ij} = dLdA_{ij}*G_i/(sig_i+eps)*[1 - (1/K)sum_q dLdA_{iq} - 1/(sig_i+eps)(1/K)sum_q dLdA_{iq}(A_{iq}-mu_i)(A_{ij}-mu_i)]
         dLdnorm = dLdA*self.W*self.std_inv # (n_this,K) * (n_this,1) = (n_this,K)
         dLdX = dLdnorm.copy() # first term
         dLdX -= np.mean(dLdnorm,axis=1,keepdims=True) # second term
         dLdX -= self.std_inv*self.A_min_mu*np.mean(dLdnorm*self.A_min_mu,axis=1,keepdims=True)
 
-        self.dLdW0 = np.sum(dLdA,axis=1,keepdims=True)
-        self.dLdW = np.sum(dLdA*self.norm,axis=1,keepdims=True)
-        
-        if self.adam:
-            self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
-            self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdW**2
-            self.M0 = self.B1_adam*self.M0 + (1-self.B1_adam)*self.dLdW0
-            self.V0 = self.B2_adam*self.V0 + (1-self.B2_adam)*self.dLdW0**2
+        if not grad:
+            self.dLdW0 = np.sum(dLdA,axis=1,keepdims=True)
+            self.dLdW = np.sum(dLdA*self.norm,axis=1,keepdims=True)
+
+            if self.adam:
+                self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
+                self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdW**2
+                self.M0 = self.B1_adam*self.M0 + (1-self.B1_adam)*self.dLdW0
+                self.V0 = self.B2_adam*self.V0 + (1-self.B2_adam)*self.dLdW0**2
+        # else:
+        #     pass # if gradient wrt input requested then don't update derivatives wrt weights
 
         return dLdX
 
@@ -337,19 +343,21 @@ class Linear(Module,MLUtilities):
         Z = np.dot(self.W.T,self.A) + self.W0 # (n_next,b)
         return Z
 
-    def backward(self,dLdZ):
+    def backward(self,dLdZ,grad=False):
         # dLdZ (n_next,b)
         dLdA = np.dot(self.W,dLdZ) # (n_this,n_next).(n_next,b) = (n_this,b)
 
-        # self.dLdW = np.sum([np.dot(self.A[:,i:i+1],dLdZ[:,i:i+1].T) for i in range(self.A.shape[1])], axis=0) # (n_this,n_next)
-        # # !! FIND BETTER WAY OF DOING ABOVE STEP !! maybe np.tensordot?
-        self.dLdW = np.tensordot(self.A,dLdZ.T,axes=1)
-        self.dLdW0 = np.sum(dLdZ,axis=-1,keepdims=True) # (n_next,1)
-        if self.adam:
-            self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
-            self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdW**2
-            self.M0 = self.B1_adam*self.M0 + (1-self.B1_adam)*self.dLdW0
-            self.V0 = self.B2_adam*self.V0 + (1-self.B2_adam)*self.dLdW0**2
+        if not grad:
+            # self.dLdW = np.sum([np.dot(self.A[:,i:i+1],dLdZ[:,i:i+1].T) for i in range(self.A.shape[1])], axis=0) # (n_this,n_next)
+            self.dLdW = np.tensordot(self.A,dLdZ.T,axes=1)
+            self.dLdW0 = np.sum(dLdZ,axis=-1,keepdims=True) # (n_next,1)
+            if self.adam:
+                self.M = self.B1_adam*self.M + (1-self.B1_adam)*self.dLdW
+                self.V = self.B2_adam*self.V + (1-self.B2_adam)*self.dLdW**2
+                self.M0 = self.B1_adam*self.M0 + (1-self.B1_adam)*self.dLdW0
+                self.V0 = self.B2_adam*self.V0 + (1-self.B2_adam)*self.dLdW0**2
+        # else:
+        #     pass # if gradient wrt input requested then don't update derivatives wrt weights
         
         return dLdA
 
