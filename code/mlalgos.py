@@ -483,7 +483,11 @@ class Sequential(Module,MLUtilities,Utilities):
             Ypred[Ypred < 1e-4] = -1.0
         return Ypred
     
-    def gradient(self): # calculate gradient of output wrt input
+    def gradient(self,X):
+        """ Calculate gradient of output wrt input.
+            Expect X.shape = (n0,n_samp)
+        """
+        Ypred = self.forward(X) # update activations. prediction for provided input
         grad = np.eye(self.n_layer[-1])
         for m in self.modules[-1::-1]:
             grad = m.backward(grad,grad=True)
