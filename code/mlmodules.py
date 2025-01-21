@@ -41,14 +41,22 @@ class Sigmoid(Module,MLUtilities):
         self.A = 1/(1+np.exp(-Z))
         return self.A
 
-    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
-        dLdZ = self.A*(1-self.A)*dLdA
+    def backward(self,dLdA,grad=False):
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        dLdZ = self.A*(1-self.A) # (n_this,b)
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
         return dLdZ
     
     def predict(self):
-        out = np.zeros_like(self.A)
-        out[self.A > self.threshold] = 1.0
-        return out
+        # out = np.zeros_like(self.A)
+        # out[self.A > self.threshold] = 1.0
+        # return out
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
+    
 #################
 
 #################
@@ -60,8 +68,14 @@ class Tanh(Module,MLUtilities):
         self.A = np.tanh(Z)
         return self.A
 
-    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
-        return dLdA*(1-self.A**2)
+    def backward(self,dLdA,grad=None): 
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdA*(1-self.A**2)
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
+        return dLdZ
     
     def predict(self):
         return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
@@ -77,10 +91,15 @@ class ReLU(Module,MLUtilities):
         self.A = np.maximum(0.0,Z)
         return self.A
 
-    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
+    def backward(self,dLdA,grad=None): 
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
         dLdZ = np.zeros_like(self.A)
         dLdZ[self.A > 0.0] = 1.0
-        dLdZ *= dLdA
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
         return dLdZ
     
     def predict(self):
@@ -96,7 +115,7 @@ class Identity(Module,MLUtilities):
         self.A = Z.copy()
         return self.A
 
-    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
+    def backward(self,dLdA,grad=False): 
         return dLdA # dLdZ = dLdA when A = Z.
     
     def predict(self):
@@ -113,8 +132,15 @@ class SoftMax(Module,MLUtilities):
         self.A = exp_z/np.sum(exp_z,axis=0)
         return self.A # (K,n_{sample})
 
-    def backward(self,dLdA,grad=None): # kwarg grad for compatibility with weighted modules
-        dLdZ = self.A*(1-self.A)*dLdA # formally same as backward of Sigmoid()
+    def backward(self,dLdA,grad=False): 
+        # dLdA -> (K,b) if grad=False else (K,n_last,b)
+        dLdZ = self.A*(1-self.A) # (n_this,b)
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2))
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2))
+        # dLdZ = self.A*(1-self.A)*dLdA # formally same as backward of Sigmoid()
         return dLdZ
 
     def predict(self):
@@ -296,6 +322,23 @@ class Square(Module,MLUtilities):
 #################
 
 #################
+class LossGAN(Module,MLUtilities):
+    def forward(self,D_x,D_Gz):
+        # expect D_x, D_Gz of shape (1,b) and continuous in (0,1)
+        Loss = np.mean(np.log(D_x.flatten() + 1e-15)) + np.mean(np.log(1-D_Gz.flatten() + 1e-15))
+        return Loss
+
+    def backward_d(self,D_x,D_Gz):
+        dLdZd = 1 - D_x - D_Gz # (n_last,b)
+        return dLdZd/D_Gz.shape[-1]
+    
+    def backward_g(self,D_Gz,Dprime_Gz):
+        # no plus sign so that default sgd_step will implement ascent
+        dLdZg = Dprime_Gz/(1-D_Gz + 1e-15) # (n0,n_last,b)??
+        return dLdZg/D_Gz.shape[-1]
+#################
+
+#################
 class Hinge(Module,MLUtilities):
     def forward(self,Ypred,Y):
         self.Ypred = Ypred # (n_last,b)
@@ -344,8 +387,8 @@ class Linear(Module,MLUtilities):
         return Z
 
     def backward(self,dLdZ,grad=False):
-        # dLdZ (n_next,b)
-        dLdA = np.dot(self.W,dLdZ) # (n_this,n_next).(n_next,b) = (n_this,b)
+        # dLdZ (n_next,b) [or (n_next,n_last,b) if grad=True]
+        dLdA = np.tensordot(self.W,dLdZ,axes=1) # (n_this,n_next).(n_next[,n_last],b) = (n_this[,n_last],b)
 
         if not grad:
             # self.dLdW = np.sum([np.dot(self.A[:,i:i+1],dLdZ[:,i:i+1].T) for i in range(self.A.shape[1])], axis=0) # (n_this,n_next)

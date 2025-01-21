@@ -185,7 +185,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['verbose']: boolean, whether of not to print output (default True).
             -- params['logfile']: None or str, file into which to print output (default None, print to stdout)
 
-            Provides forward, backward, sgd_step and sgd methods. Use sgd to train on given data set.
+            Provides forward, backward, sgd_step and train methods. Use self.train to train on given data set.
         """
         Utilities.__init__(self)
         self.params = params
@@ -298,7 +298,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 if self.custom_atypes is None:
                     raise ValueError("Need to define dictionary custom_atypes with keys containing "+self.atypes[l])
                 if self.atypes[l] not in list(self.custom_atypes.keys()):
-                    raise ValueError("custom_loss keys must contain "+self.atypes[l])
+                    raise ValueError("custom_atypes keys must contain "+self.atypes[l])
 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
@@ -488,14 +488,15 @@ class Sequential(Module,MLUtilities,Utilities):
         """ Calculate gradient of output wrt input.
             Expect X.shape = (n0,n_samp)
         """
+        # will currently break with BatchNorm and DropNorm modules
         Ypred = self.forward(X) # update activations. prediction for provided input
-        grad = np.eye(self.n_layer[-1])
+        dYdX = np.array([np.eye(self.n_layer[-1])]*X.shape[1]).T # (nL,nL,b)
         for m in self.modules[-1::-1]:
-            grad = m.backward(grad,grad=True)
+            dYdX = m.backward(dYdX,grad=True)
         if self.standardize:
             # undo standardization
-            grad *= (self.Y_std + 1e-15)
-        return grad
+            dYdX *= (self.Y_std + 1e-15)
+        return dYdX
 
     def save(self):
         """ Save current weights and setup params to file(s). """
@@ -907,7 +908,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
-                                  If 'drop', then value of 'p_drop' must be specified. Default 'bn'.
+                                  If 'drop', then value of 'p_drop' must be specified. Default 'none'.
             -- params['p_drop']: float between 0 and 1, drop probability.
                                  Only used if 'reg_fun' = 'drop'.
                                  Default value 0.5, but not clear if this is a good choice.
@@ -916,7 +917,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             -- params['verbose']: boolean, whether of not to print output (default True).
             -- params['logfile']: None or str, file into which to print output (default None, print to stdout)
 
-            Provides forward, backward, sgd_step and sgd methods. Use sgd to train on given data set.
+            Provides forward, backward, sgd_step and train methods. Use self.train to train on given data set.
         """
         Utilities.__init__(self)
         self.params = params
@@ -938,6 +939,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.decay_norm_w = int(params.get('decay_norm_w',2))
         
         self.standardize = params.get('standardize',True)
+        self.params['standardize'] = self.standardize
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
@@ -1029,15 +1031,15 @@ class BiSequential(Module,MLUtilities,Utilities):
         for l in range(self.La):
             if self.atypes_a[l][:6] == 'custom':
                 if self.custom_atypes_a is None:
-                    raise ValueError("Need to define dictionary custom_atypes with keys containing "+self.atypes_a[l])
+                    raise ValueError("Need to define dictionary custom_atypes_a with keys containing "+self.atypes_a[l])
                 if self.atypes_a[l] not in list(self.custom_atypes_a.keys()):
-                    raise ValueError("custom_loss keys must contain "+self.atypes_a[l])
+                    raise ValueError("custom_atypes_a keys must contain "+self.atypes_a[l])
         for l in range(self.Lw):
             if self.atypes_w[l][:6] == 'custom':
                 if self.custom_atypes_w is None:
-                    raise ValueError("Need to define dictionary custom_atypes with keys containing "+self.atypes_w[l])
+                    raise ValueError("Need to define dictionary custom_atypes_w with keys containing "+self.atypes_w[l])
                 if self.atypes_w[l] not in list(self.custom_atypes_w.keys()):
-                    raise ValueError("custom_loss keys must contain "+self.atypes_w[l])
+                    raise ValueError("custom_atypes_w keys must contain "+self.atypes_w[l])
 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
@@ -1063,7 +1065,8 @@ class BiSequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("decay_norm_w must be one of [1,2] in BiSequential(). Setting to 2.")
             self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
-            
+
+        return
 
     def forward_a(self,Xt): # update activations
         for m in self.modules_a:
@@ -1387,6 +1390,205 @@ class BiSequential(Module,MLUtilities,Utilities):
 #################
 class GAN(Module,MLUtilities,Utilities):
     def __init__(self,params={}):
-        pass
+        """ Class to implement gradient descent/ascent using error back-propagation for
+            a generative adversarial network (GAN) constructed using two Sequential instances,
+            Disc (discriminator) and Gen (generator).
+            Gen takes input Z (random vector) and generates output of shape X, same as training data.
+            Disc takes input of shape X and outputs 1 if input is from training sample and 0 if input is generated by Gen.
+
+            Algorithm from GAN paper: Goodfellow+ arXiv:1406.2661 
+
+            params should be dictionary with a subset of following keys:
+            ---- input
+            -- params['data_dim']: int, data (X) dimension
+
+            ---- network Gen
+            -- params['Lg']: int, Lg >= 1, number of layers in generator Gen
+            -- params['n_layer_g']: list of Lg int, number of units in each layer of Gen. ** must have n_layer_g[-1] = X.shape[0] (data dimension) **
+            -- params['atypes_g']: list of Lg str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+                                   If 'custom...', then also define dictionary params['custom_atypes_a']
+            -- params['custom_atypes_g']: dictionary with keys matching 'custom...' entry in params['atypes_g']
+                                          with items being activation module instances.
+            -- params['wt_decay_g']: float, weight decay coefficient (should be non-negative; default 0.0)
+            -- params['decay_norm_g']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
+
+            ---- network Disc
+            -- params['Ld']: int, Ld >= 1, number of layers in discriminator Disc
+            -- params['n_layer_d']: list of Ld int, number of units in each layer of Disc. ** must have n_layer_d[-1] = 1 (classification probability output) **
+            -- params['atypes_d']: list of Ld str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+                                   If 'custom...', then also define dictionary params['custom_atypes_d']
+                                   ** must have atypes_d[-1] = 'sigm' (classification probability output) **
+            -- params['custom_atypes_d']: dictionary with keys matching 'custom...' entry in params['atypes_d']
+                                          with items being activation module instances.
+            -- params['wt_decay_d']: float, weight decay coefficient (should be non-negative; default 0.0)
+            -- params['decay_norm_d']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
+
+            ---- common
+            -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
+            -- params['adam']: boolean, whether or not to use adam in GD update (default True)
+            -- params['reg_fun']: str, type of regularization.
+                                  Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
+                                  If 'drop', then value of 'p_drop' must be specified. Default 'none'.
+            -- params['p_drop']: float between 0 and 1, drop probability.
+                                 Only used if 'reg_fun' = 'drop'.
+                                 Default value 0.5, but not clear if this is a good choice.
+            -- params['seed']: int, random number seed.
+            -- params['file_stem']: str, common stem for generating filenames for saving (should include full path).
+            -- params['verbose']: boolean, whether of not to print output (default True).
+            -- params['logfile']: None or str, file into which to print output (default None, print to stdout)
+
+            Provides forward, backward, sgd_step and train methods. Use self.train to train on given data set.
+        """
+        Utilities.__init__(self)
+        self.params = params
+        
+        self.n0 = params.get('data_dim',None)
+        self.Lg = int(params.get('Lg',1))
+        self.n_layer_g = params.get('n_layer_g',[self.n0]) # last n_layer_g should be n0
+        self.atypes_g = params.get('atypes_g',['lin']) 
+        self.custom_atypes_g = params.get('custom_atypes_g',None)
+        self.wt_decay_g = params.get('wt_decay_g',0.0)
+        self.decay_norm_g = int(params.get('decay_norm_g',2))
+
+        self.Ld = int(params.get('Ld',1))
+        self.n_layer_d = params.get('n_layer_d',[1]) # last n_layer_d should be 1
+        self.atypes_d = params.get('atypes_d',['sigm']) 
+        self.custom_atypes_d = params.get('custom_atypes_d',None)
+        self.wt_decay_d = params.get('wt_decay_d',0.0)
+        self.decay_norm_d = int(params.get('decay_norm_d',2))
+        
+        self.standardize = params.get('standardize',True)
+        self.params['standardize'] = self.standardize
+        self.adam = params.get('adam',True)
+        self.reg_fun = params.get('reg_fun','none')
+        self.p_drop = params.get('p_drop',0.5)
+        self.seed = params.get('seed',None)
+        self.file_stem = params.get('file_stem','gan')
+        self.verbose = params.get('verbose',True)
+        self.logfile = params.get('logfile',None)
+        
+        self.rng = np.random.RandomState(self.seed)
+        
+        self.Y_std = 1.0
+        self.Y_mean = 0.0
+        self.params['Y_std'] = self.Y_std
+        self.params['Y_mean'] = self.Y_mean
+        # will be reset by self.train() if self.standardize == True
+
+        if self.verbose:
+            self.print_this("Setting up GAN with {0:d}-layer discriminator and {1:d}-layer generator".format(self.Ld,self.Lg),self.logfile)
+            
+        self.loss = LossGAN() 
+        self.net_type = 'reg'
+        
+        self.check_init()
+        
+        # output of Modulator
+        self.modules_g = Modulate(self.n0,self.n_layer_g,self.atypes_g,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_g,None)
+        self.modules_d = Modulate(self.n0,self.n_layer_d,self.atypes_d,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_d,None)
+
+        # set last activation module net_type
+        self.modules_g[-1].net_type = self.net_type
+        self.modules_d[-1].net_type = self.net_type
+        
+                
+        if self.verbose:
+            self.print_this("... ... expecting data dim = {0:d}, output dim = 1".format(self.n0),self.logfile)
+            self.print_this("... ...  Gen using hidden layers of sizes ["
+                            +','.join([str(self.n_layer_g[i]) for i in range(self.Lg)])
+                            +"]",self.logfile)
+            self.print_this("... ... ... and activations ["
+                            +','.join([self.atypes_g[i] for i in range(self.Lg)])
+                            +"]",self.logfile)
+            self.print_this("... ... Disc using hidden layers of sizes ["
+                            +','.join([str(self.n_layer_d[i]) for i in range(self.Ld)])
+                            +"]",self.logfile)
+            self.print_this("... ... ... and activations ["
+                            +','.join([self.atypes_d[i] for i in range(self.Ld)])
+                            +"]",self.logfile)
+            self.print_this("... ... using GAN loss function",self.logfile)
+            if self.reg_fun == 'drop':
+                self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
+            elif self.reg_fun == 'bn':
+                self.print_this("... ... using batch normalization",self.logfile)
+            else:
+                self.print_this("... ... not using any regularization",self.logfile)
+            if self.wt_decay_a > 0.0:
+                self.print_this("... ... NNa using weight decay with coefficient {0:.3e} and norm {1:d}".format(self.wt_decay_a,self.decay_norm_a),
+                                self.logfile)
+            else:
+                self.print_this("... ... not using any weight decay in NNa",self.logfile)
+            if self.wt_decay_w > 0.0:
+                self.print_this("... ... NNw using weight decay with coefficient {0:.3e} and norm {1:d}".format(self.wt_decay_w,self.decay_norm_w),
+                                self.logfile)
+            else:
+                self.print_this("... ... not using any weight decay in NNw",self.logfile)
+
+
+    def check_init(self):
+        """ Run various self-consistency checks at initialization. """
+
+        if self.n0 is None:
+            raise ValueError("data_dim must be specified in GAN()")
+            
+        if len(self.atypes_g) != self.Lg:
+            raise TypeError('Incompatible atypes_g in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Lg,len(self.atypes_g)))
+        if len(self.atypes_d) != self.Ld:
+            raise TypeError('Incompatible atypes_d in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Ld,len(self.atypes_d)))
+        
+        if len(self.n_layer_g) != self.Lg:
+            raise TypeError('Incompatible n_layer_g in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Lg,len(self.n_layer_g)))
+        if len(self.n_layer_d) != self.Ld:
+            raise TypeError('Incompatible n_layer_d in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Ld,len(self.n_layer_d)))
+
+        if self.n_layer_g[-1] != self.n0:
+            raise Exception('Need n_layer_g[-1] = n0, found n_layer_g[-1]={0:d}, n0={1:d}'.format(self.n_layer_g[-1],self.n0))
+        if self.n_layer_d[-1] != 1:
+            raise Exception('Need n_layer_d[-1] = 1, found n_layer_d[-1]={0:d}'.format(self.n_layer_d[-1]))
+        
+        for l in range(self.Lg):
+            if self.atypes_g[l][:6] == 'custom':
+                if self.custom_atypes_g is None:
+                    raise ValueError("Need to define dictionary custom_atypes_g with keys containing "+self.atypes_g[l])
+                if self.atypes_g[l] not in list(self.custom_atypes_g.keys()):
+                    raise ValueError("custom_atypes_g keys must contain "+self.atypes_g[l])
+        for l in range(self.Ld):
+            if self.atypes_d[l][:6] == 'custom':
+                if self.custom_atypes_d is None:
+                    raise ValueError("Need to define dictionary custom_atypes_d with keys containing "+self.atypes_d[l])
+                if self.atypes_d[l] not in list(self.custom_atypes_d.keys()):
+                    raise ValueError("custom_atypes_d keys must contain "+self.atypes_d[l])
+
+        if self.atypes_d[-1] != 'sigm':
+            if self.verbose:
+                print("atypes_d[-1] must refer to Sigmoid activation in GAN(). Setting to 'sigm'.")
+            self.atypes_d[-1] = 'sigm'
+                
+        if self.reg_fun not in ['bn','drop','none']:
+            if self.verbose:
+                print("reg_fun must be one of ['bn','drop','none'] in GAN(). Setting to 'none'.")
+            self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
+
+        if self.wt_decay_g < 0.0:
+            if self.verbose:
+                print("wt_decay_g must be non-negative in GAN(). Setting to zero.")
+            self.wt_decay_g = 0.0 # safest is 0.0 if user is unsure about role of weight decay
+
+        if self.wt_decay_d < 0.0:
+            if self.verbose:
+                print("wt_decay_d must be non-negative in GAN(). Setting to zero.")
+            self.wt_decay_d = 0.0 # safest is 0.0 if user is unsure about role of weight decay
+            
+        if self.decay_norm_g not in [1,2]:
+            if self.verbose:
+                print("decay_norm_g must be one of [1,2] in GAN(). Setting to 2.")
+            self.decay_norm_g = 2 # safest is 2 if user is unsure about role of decay norm
+            
+        if self.decay_norm_d not in [1,2]:
+            if self.verbose:
+                print("decay_norm_d must be one of [1,2] in GAN(). Setting to 2.")
+            self.decay_norm_d = 2 # safest is 2 if user is unsure about role of decay norm
+
+        return
 
 #################################
