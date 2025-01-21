@@ -176,7 +176,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['decay_norm']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
-                                  If 'drop', then value of 'p_drop' must be specified. Default 'bn'.
+                                  If 'drop', then value of 'p_drop' must be specified. Default 'none'.
             -- params['p_drop']: float between 0 and 1, drop probability.
                                  Only used if 'reg_fun' = 'drop'.
                                  Default value 0.5, but not clear if this is a good choice.
@@ -199,6 +199,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.neg_labels = params.get('neg_labels',True)
         self.threshold = params.get('threshold',None)
         self.standardize = params.get('standardize',True)
+        self.params['standardize'] = self.standardize # for consistency with self.save and self.load
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
@@ -491,6 +492,9 @@ class Sequential(Module,MLUtilities,Utilities):
         grad = np.eye(self.n_layer[-1])
         for m in self.modules[-1::-1]:
             grad = m.backward(grad,grad=True)
+        if self.standardize:
+            # undo standardization
+            grad *= (self.Y_std + 1e-15)
         return grad
 
     def save(self):
@@ -1383,6 +1387,6 @@ class BiSequential(Module,MLUtilities,Utilities):
 #################
 class GAN(Module,MLUtilities,Utilities):
     def __init__(self,params={}):
-
+        pass
 
 #################################
