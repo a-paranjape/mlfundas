@@ -328,14 +328,18 @@ class LossGAN(Module,MLUtilities):
         Loss = np.mean(np.log(D_x.flatten() + 1e-15)) + np.mean(np.log(1-D_Gz.flatten() + 1e-15))
         return Loss
 
-    def backward_d(self,D_x,D_Gz):
-        dLdZd = 1 - D_x - D_Gz # (n_last,b)
-        return dLdZd/D_Gz.shape[-1]
+    def backward_dd(self,D_x):
+        dLdZdd = 1 - D_x # (1=n_last^D,b)
+        return dLdZdd/D_x.shape[-1]
+
+    def backward_dg(self,D_Gz):
+        dLdZdg = -1.0*D_Gz # (1=n_last^D,b)
+        return dLdZdg/D_Gz.shape[-1]
     
     def backward_g(self,D_Gz,Dprime_Gz):
-        # no plus sign so that default sgd_step will implement ascent
-        dLdZg = Dprime_Gz/(1-D_Gz + 1e-15) # (n0,n_last,b)??
-        return dLdZg/D_Gz.shape[-1]
+        # no minus sign so that default sgd_step will implement ascent
+        dLdZg = Dprime_Gz/(1-D_Gz + 1e-15) # (n0,1,b)
+        return np.squeeze(dLdZg,axis=1)/D_Gz.shape[-1] # (n0=n_last^G,b)
 #################
 
 #################
