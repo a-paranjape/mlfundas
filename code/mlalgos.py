@@ -1405,10 +1405,11 @@ class GAN(Module,MLUtilities,Utilities):
 
             ---- network Gen
             -- params['Lg']: int, Lg >= 1, number of layers in generator Gen
-            -- params['n_layer_g']: list of Lg int, number of units in each layer of Gen. ** must have n_layer_g[-1] = X.shape[0] (data dimension) **
+            -- params['n_layer_g']: list of Lg int, number of units in each layer of Gen. 
+                                    ** must have n_layer_g[-1] = X.shape[0] (data dimension) **
             -- params['atypes_g']: list of Lg str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_a']
-                                   ** must have atypes_g[-1] = 'lin' (regression output) **
+                                   ** must have atypes_g[-1] = 'tanh' (standardized regression output) **
             -- params['custom_atypes_g']: dictionary with keys matching 'custom...' entry in params['atypes_g']
                                           with items being activation module instances.
             -- params['wt_decay_g']: float, weight decay coefficient (should be non-negative; default 0.0)
@@ -1416,7 +1417,8 @@ class GAN(Module,MLUtilities,Utilities):
 
             ---- network Disc
             -- params['Ld']: int, Ld >= 1, number of layers in discriminator Disc
-            -- params['n_layer_d']: list of Ld int, number of units in each layer of Disc. ** must have n_layer_d[-1] = 1 (classification probability output) **
+            -- params['n_layer_d']: list of Ld int, number of units in each layer of Disc. 
+                                    ** must have n_layer_d[-1] = 1 (classification probability output) **
             -- params['atypes_d']: list of Ld str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_d']
                                    ** must have atypes_d[-1] = 'sigm' (classification probability output) **
@@ -1426,6 +1428,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- params['decay_norm_d']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
 
             ---- common
+            -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
@@ -1446,7 +1449,7 @@ class GAN(Module,MLUtilities,Utilities):
         self.n0 = params.get('data_dim',None)
         self.Lg = int(params.get('Lg',1))
         self.n_layer_g = params.get('n_layer_g',[self.n0]) # last n_layer_g should be n0
-        self.atypes_g = params.get('atypes_g',['lin']) 
+        self.atypes_g = params.get('atypes_g',['tanh']) 
         self.custom_atypes_g = params.get('custom_atypes_g',None)
         self.wt_decay_g = params.get('wt_decay_g',0.0)
         self.decay_norm_g = int(params.get('decay_norm_g',2))
@@ -1458,6 +1461,8 @@ class GAN(Module,MLUtilities,Utilities):
         self.wt_decay_d = params.get('wt_decay_d',0.0)
         self.decay_norm_d = int(params.get('decay_norm_d',2))
         
+        self.standardize = params.get('standardize',True)
+        self.params['standardize'] = self.standardize # for consistency with self.save and self.load
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
@@ -1467,19 +1472,19 @@ class GAN(Module,MLUtilities,Utilities):
         self.logfile = params.get('logfile',None)
         
         self.rng = np.random.RandomState(self.seed)
-
-        # no standardization in GAN
-        # self.Y_std = 1.0
-        # self.Y_mean = 0.0
-        # self.params['Y_std'] = self.Y_std
-        # self.params['Y_mean'] = self.Y_mean
-        # # will be reset by self.train() if self.standardize == True
+        
+        self.X_std = 1.0
+        self.X_mean = 0.0
+        self.params['X_std'] = self.X_std
+        self.params['X_mean'] = self.X_mean
+        # will be reset by self.train() if self.standardize == True
 
         if self.verbose:
             self.print_this("Setting up GAN with {0:d}-layer discriminator and {1:d}-layer generator".format(self.Ld,self.Lg),self.logfile)
             self.print_this("... ** assumes uniform noise prior at present **",self.logfile)
             
-        self.loss = LossGAN() 
+        self.loss = LossGAN()
+        # self.loss = NLL()
         self.net_type = 'reg'
         
         self.check_init()
@@ -1507,7 +1512,12 @@ class GAN(Module,MLUtilities,Utilities):
             self.print_this("... ... ... and activations ["
                             +','.join([self.atypes_d[i] for i in range(self.Ld)])
                             +"]",self.logfile)
+            ############# MODIFY THIS ################
             self.print_this("... ... using GAN loss function",self.logfile)
+            if self.standardize:
+                self.print_this("... ... using 2-step standardization",self.logfile)
+            else:
+                self.print_this("... ... not using any standardization",self.logfile)
             if self.reg_fun == 'drop':
                 self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             elif self.reg_fun == 'bn':
@@ -1570,10 +1580,10 @@ class GAN(Module,MLUtilities,Utilities):
                 print("atypes_d[-1] must refer to Sigmoid activation in GAN(). Setting to 'sigm'.")
             self.atypes_d[-1] = 'sigm'
 
-        if self.atypes_g[-1] != 'lin':
+        if self.atypes_g[-1] != 'tanh':
             if self.verbose:
-                print("atypes_g[-1] must refer to Identity activation in GAN(). Setting to 'lin'.")
-            self.atypes_g[-1] = 'lin'
+                print("atypes_g[-1] must refer to Tanh activation in GAN(). Setting to 'tanh'.")
+            self.atypes_g[-1] = 'tanh'
                 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
@@ -1614,7 +1624,7 @@ class GAN(Module,MLUtilities,Utilities):
 
     def backward_d(self,delta): # update gradients
         for m in self.modules_d[-2::-1]:
-            # reverse order, expect first input = dL/dZdd + dL/dZdg
+            # reverse order, expect first input = dL/dZd
             delta = m.backward(delta)
 
     def backward_g(self,delta): # update gradients
@@ -1653,161 +1663,6 @@ class GAN(Module,MLUtilities,Utilities):
         
         return decay_loss_d+decay_loss_g
 
-    
-    def train(self,X,params={}):
-        """ Main routine for training. 
-            Expect training sample X.shape = (n0,n_samp) = Z.shape
-            params should be dictionary with keywords:
-            -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
-            -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
-            -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
-            -- 'val_frac': float, fraction of input data to use for validation
-            -- 'mb_size': None or int >= 1, size of mini-batches. If None (default), will be set to int((X.shape[1]*(1-val_frac))/2) 
-            -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
-        """
-        max_epoch_d = params.get('max_epoch_d',1)
-        max_epoch_g = params.get('max_epoch_g',100)
-        lrate_d = params.get('lrate_d',0.005)
-        lrate_g = params.get('lrate_g',0.005)
-        mb_size = params.get('mb_size',None)
-        val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
-        check_after = params.get('check_after',10)
-        
-        if self.verbose:
-            self.print_this("... training",self.logfile)
-            
-        d,n_samp = X.shape
-
-        if d != self.n0:
-            raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
-
-        n_val = np.rint(val_frac*n_samp).astype(int)
-        n_samp -= n_val        
-
-        if n_val > 0:
-            ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
-            ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
-        else:
-            ind_train = np.arange(X.shape[1])
-
-        X_train = X[:,ind_train].copy()
-
-        if n_val > 0:
-            X_val = X[:,ind_val].copy()
-
-        if mb_size is None:
-            if self.verbose:
-                print_str = "... no mb_size specified. Setting to n_samp // 2."
-                self.print_this(print_str,self.logfile)
-            mb_size = n_samp // 2
-        else:
-            if (mb_size > n_samp) | (mb_size < 1):
-                if self.verbose:
-                    self.print_this("... incompatible mb_size in GAN.train(). Setting to 1 (standard SGD).",
-                                    self.logfile)
-                mb_size = 1
-
-        self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
-        self.epoch_loss = np.zeros(max_epoch_g*max_epoch_d)
-        self.epochs = np.arange(max_epoch_g)+1.0
-        self.val_loss = np.zeros(max_epoch_g)
-        for t in range(max_epoch_g):
-            ###########################
-            # outer loop for training G
-            for k in range(max_epoch_d):
-                ###########################
-                # inner loop for training D
-                ind_mb = self.rng.choice(np.arange(n_samp),size=mb_size,replace=False)
-                data = X_train[:,ind_mb].copy()
-                random = self.noise_prior(data.shape[0],data.shape[1])
-
-                # note no issues calling loss.backward_** before loss.forward since LossGAN doesn't store/update any internal attributes
-
-                # update activations and calculate D loss gradients for mini-batch
-                D_x = self.forward_d(data)
-                dLdZdd = self.loss.backward_dd(D_x) # will account for sign to ensure ascent instead of descent
-
-                G = self.forward_g(random)
-                D_Gz = self.forward_d(G)
-                dLdZdg = self.loss.backward_dg(D_Gz) # will account for sign to ensure ascent instead of descent
-
-                # loss calculation
-                batch_loss = self.loss.forward(D_x,D_Gz) # calculate current batch loss
-                if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
-                    batch_loss += self.calc_loss_decay()
-                self.epoch_loss[k + t*max_epoch_d] = batch_loss
-
-                # back-propagation: update D gradients using ascent
-                self.backward_d(dLdZdd + dLdZdg) 
-
-                # gradient descent update for D (will account for weight decay if requested)
-                self.sgd_step_d(t,lrate_d) 
-                # end inner loop
-                ###########################
-
-            random = self.noise_prior(X.shape[0],mb_size) 
-
-            # update activations and calculate G loss gradients for mini-batch
-            G = self.forward_g(random)
-            D_Gz = self.forward_d(G)
-            Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
-            dLdZg = self.loss.backward_g(D_Gz,Dprime_Gz) 
-
-            # back-propagation: update G gradients using descent
-            self.backward_g(dLdZg) 
-
-            # gradient descent update for G (will account for weight decay if requested)
-            self.sgd_step_g(t,lrate_g) 
-
-            ######### NEED TO THINK ABOUT VALIDATION CHECK #############
-            ##### (recall 'loss' is not simply to be minimized) ########
-            # # validation check
-            # if n_val > 0:
-            #     # update activations. prediction for validation data
-            #     D_x_val = self.forward_d(X_val)
-            #     random = self.noise_prior(X_val.shape[0],X_val.shape[1]) # so noise changes in every validation step
-            #     G_val = self.forward_g(random)
-            #     D_Gz_val = self.forward_d(G_val)
-                
-            #     # calculate validation loss
-            #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
-            #     if (self.wt_decay_g > 0.0):
-            #         val_loss += self.calc_loss_decay()
-            #     self.val_loss[t] = val_loss
-                
-            #     if t > check_after:
-            #         x = np.arange(t-check_after,t+1)
-            #         y = self.val_loss[x].copy()
-            #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
-            #             if self.verbose:
-            #                 self.print_this('',self.logfile)
-            #             break
-            
-            if self.verbose:
-                self.status_bar(t,max_epoch_g)
-            # end outer loop
-            ###########################
-
-        if self.reg_fun == 'drop':
-            if self.verbose:
-                self.print_this("... correcting for drop regularization",self.logfile)
-            # convert DropNorm layers to effectively Identity
-            for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.drop = False
-            for m in self.modules_g[2::3]: 
-                m.drop = False
-                
-            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
-            # biases untouched.
-            for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.W *= (1-self.p_drop)
-            for m in self.modules_g[::3]: 
-                m.W *= (1-self.p_drop)
-                
-        if self.verbose:
-            self.print_this("... ... done",self.logfile)
-            
-        return
 
     def gradient_d(self,X):
         """ Calculate gradient of discriminator D wrt input X.
@@ -1827,6 +1682,13 @@ class GAN(Module,MLUtilities,Utilities):
             raise TypeError("Incompatible data in GAN.generate(). Expected {0:d}, got {1:d}".format(self.n0,Z.shape[0]))
         # update all activations and generate.
         G = self.forward_g(Z)
+        if self.standardize:
+            # undo tanh
+            G = np.arctanh(G)
+            # undo standardization
+            G *= (self.X_std + 1e-15)
+            G += self.X_mean
+
         return G
 
     def discriminate(self,X):
@@ -1883,38 +1745,13 @@ class GAN(Module,MLUtilities,Utilities):
         # params dict
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
+            
+        self.standardize = self.params['standardize']
+        if self.standardize:
+            self.X_std = self.params['X_std']
+            self.X_mean = self.params['X_mean']
         
         return
-
-    # to be called after generating/loading instance of GAN() with correct setup params.
-    def extract_generator(self):
-        """ Extract generator G as instance of Sequential. """
-        if self.verbose:
-            self.print_this("... extracting generator",self.logfile)
-        params_setup = copy.deepcopy(self.params)
-        params_setup['L'] = params_setup['Lg']
-        params_setup['n_layer'] = params_setup['n_layer_g']
-        params_setup['atypes'] = params_setup['atypes_g']
-        params_setup['standardize'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
-        generator = Sequential(params=params_setup) # note Sequential not GAN
-        for m in range(len(generator.modules)):
-            generator.modules[m] = copy.deepcopy(self.modules_g[m])
-        return generator
-
-    # to be called after generating/loading instance of GAN() with correct setup params.
-    def extract_discriminator(self):
-        """ Extract discriminator D as instance of Sequential. """
-        if self.verbose:
-            self.print_this("... extracting discriminator",self.logfile)
-        params_setup = copy.deepcopy(self.params)
-        params_setup['L'] = params_setup['Lg']
-        params_setup['n_layer'] = params_setup['n_layer_g']
-        params_setup['atypes'] = params_setup['atypes_g']
-        params_setup['standardize'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
-        discriminator = Sequential(params=params_setup) # note Sequential not GAN
-        for m in range(len(discriminator.modules)):
-            discriminator.modules[m] = copy.deepcopy(self.modules_g[m])
-        return discriminator
 
     
     def calc_N_freeparams(self):
@@ -1931,7 +1768,7 @@ class GAN(Module,MLUtilities,Utilities):
         return N
 
     
-    def train_old(self,X,params={}):
+    def train(self,X,params={}):
         """ Main routine for training. 
             Expect training sample X.shape = (n0,n_samp) = Z.shape
             params should be dictionary with keywords:
@@ -1968,9 +1805,23 @@ class GAN(Module,MLUtilities,Utilities):
             ind_train = np.arange(X.shape[1])
 
         X_train = X[:,ind_train].copy()
-
         if n_val > 0:
             X_val = X[:,ind_val].copy()
+            
+        if self.standardize:
+            self.X_std = np.std(X,axis=1)
+            self.X_mean = np.mean(X,axis=1)
+            self.params['X_std'] = self.X_std
+            self.params['X_mean'] = self.X_mean
+            X_train -= self.X_mean
+            X_train /= (self.X_std + 1e-15)
+            # additional tanh standardization so that values in (-1,1)
+            X_train = np.tanh(X_train)
+            if n_val > 0:
+                X_val -= self.X_mean
+                X_val /= (self.X_std + 1e-15)
+                # additional tanh standardization so that values in (-1,1)
+                X_val = np.tanh(X_val)
 
         if mb_count is None:
             if self.verbose:
@@ -2098,5 +1949,175 @@ class GAN(Module,MLUtilities,Utilities):
             
         return
 
+    
+    def train_old(self,X,params={}):
+        """ Main routine for training. 
+            Expect training sample X.shape = (n0,n_samp) = Z.shape
+            params should be dictionary with keywords:
+            -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
+            -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
+            -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
+            -- 'val_frac': float, fraction of input data to use for validation
+            -- 'mb_size': None or int >= 1, size of mini-batches. If None (default), will be set to int((X.shape[1]*(1-val_frac))/2) 
+            -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
+        """
+        max_epoch_d = params.get('max_epoch_d',1)
+        max_epoch_g = params.get('max_epoch_g',100)
+        lrate_d = params.get('lrate_d',0.005)
+        lrate_g = params.get('lrate_g',0.005)
+        mb_size = params.get('mb_size',None)
+        val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
+        check_after = params.get('check_after',10)
+        
+        if self.verbose:
+            self.print_this("... training",self.logfile)
+            
+        d,n_samp = X.shape
+
+        if d != self.n0:
+            raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
+
+        n_val = np.rint(val_frac*n_samp).astype(int)
+        n_samp -= n_val        
+
+        if n_val > 0:
+            ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
+            ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+        else:
+            ind_train = np.arange(X.shape[1])
+
+        X_train = X[:,ind_train].copy()
+
+        if n_val > 0:
+            X_val = X[:,ind_val].copy()
+
+        if self.standardize:
+            self.X_std = np.std(X,axis=1)
+            self.X_mean = np.mean(X,axis=1)
+            self.params['X_std'] = self.X_std
+            self.params['X_mean'] = self.X_mean
+            X_train -= self.X_mean
+            X_train /= (self.X_std + 1e-15)
+            # additional tanh standardization so that values in (-1,1)
+            X_train = np.tanh(X_train)
+            if n_val > 0:
+                X_val -= self.X_mean
+                X_val /= (self.X_std + 1e-15)
+                # additional tanh standardization so that values in (-1,1)
+                X_val = np.tanh(X_val)
+            
+        if mb_size is None:
+            if self.verbose:
+                print_str = "... no mb_size specified. Setting to n_samp // 2."
+                self.print_this(print_str,self.logfile)
+            mb_size = n_samp // 2
+        else:
+            if (mb_size > n_samp) | (mb_size < 1):
+                if self.verbose:
+                    self.print_this("... incompatible mb_size in GAN.train(). Setting to 1 (standard SGD).",
+                                    self.logfile)
+                mb_size = 1
+
+        self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
+        self.epoch_loss = np.zeros(max_epoch_g*max_epoch_d)
+        self.epochs = np.arange(max_epoch_g)+1.0
+        self.val_loss = np.zeros(max_epoch_g)
+        for t in range(max_epoch_g):
+            ###########################
+            # outer loop for training G
+            for k in range(max_epoch_d):
+                ###########################
+                # inner loop for training D
+                ind_mb = self.rng.choice(np.arange(n_samp),size=mb_size,replace=False)
+                data = X_train[:,ind_mb].copy()
+                random = self.noise_prior(data.shape[0],data.shape[1])
+
+                # note no issues calling loss.backward_** before loss.forward since LossGAN doesn't store/update any internal attributes
+
+                # update activations and calculate D loss gradients for mini-batch
+                D_x = self.forward_d(data)
+                dLdZdd = self.loss.backward_dd(D_x) # will account for sign to ensure ascent instead of descent
+
+                G = self.forward_g(random)
+                D_Gz = self.forward_d(G)
+                dLdZdg = self.loss.backward_dg(D_Gz) # will account for sign to ensure ascent instead of descent
+
+                # loss calculation
+                batch_loss = self.loss.forward(D_x,D_Gz) # calculate current batch loss
+                if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
+                    batch_loss += self.calc_loss_decay()
+                self.epoch_loss[k + t*max_epoch_d] = batch_loss
+
+                # back-propagation: update D gradients using ascent
+                self.backward_d(dLdZdd + dLdZdg) 
+
+                # gradient descent update for D (will account for weight decay if requested)
+                self.sgd_step_d(t,lrate_d) 
+                # end inner loop
+                ###########################
+
+            random = self.noise_prior(X.shape[0],mb_size) 
+
+            # update activations and calculate G loss gradients for mini-batch
+            G = self.forward_g(random)
+            D_Gz = self.forward_d(G)
+            Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
+            dLdZg = self.loss.backward_g(D_Gz,Dprime_Gz) 
+
+            # back-propagation: update G gradients using descent
+            self.backward_g(dLdZg) 
+
+            # gradient descent update for G (will account for weight decay if requested)
+            self.sgd_step_g(t,lrate_g) 
+
+            ######### NEED TO THINK ABOUT VALIDATION CHECK #############
+            ##### (recall 'loss' is not simply to be minimized) ########
+            # # validation check
+            # if n_val > 0:
+            #     # update activations. prediction for validation data
+            #     D_x_val = self.forward_d(X_val)
+            #     random = self.noise_prior(X_val.shape[0],X_val.shape[1]) # so noise changes in every validation step
+            #     G_val = self.forward_g(random)
+            #     D_Gz_val = self.forward_d(G_val)
+                
+            #     # calculate validation loss
+            #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
+            #     if (self.wt_decay_g > 0.0):
+            #         val_loss += self.calc_loss_decay()
+            #     self.val_loss[t] = val_loss
+                
+            #     if t > check_after:
+            #         x = np.arange(t-check_after,t+1)
+            #         y = self.val_loss[x].copy()
+            #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
+            #             if self.verbose:
+            #                 self.print_this('',self.logfile)
+            #             break
+            
+            if self.verbose:
+                self.status_bar(t,max_epoch_g)
+            # end outer loop
+            ###########################
+
+        if self.reg_fun == 'drop':
+            if self.verbose:
+                self.print_this("... correcting for drop regularization",self.logfile)
+            # convert DropNorm layers to effectively Identity
+            for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.drop = False
+            for m in self.modules_g[2::3]: 
+                m.drop = False
+                
+            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
+            # biases untouched.
+            for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.W *= (1-self.p_drop)
+            for m in self.modules_g[::3]: 
+                m.W *= (1-self.p_drop)
+                
+        if self.verbose:
+            self.print_this("... ... done",self.logfile)
+            
+        return
     
 #################################
