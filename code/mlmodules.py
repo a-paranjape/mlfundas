@@ -329,16 +329,20 @@ class LossGAN(Module,MLUtilities):
         return Loss
 
     def backward_dd(self,D_x):
-        dLdZdd = 1 - D_x # (1=n_last^D,b)
+        # sign appropriate for ascent
+        dLdZdd = D_x - 1 # (1=n_last^D,b)
         return dLdZdd/D_x.shape[-1]
 
     def backward_dg(self,D_Gz):
-        dLdZdg = -1.0*D_Gz # (1=n_last^D,b)
+        # sign appropriate for ascent
+        dLdZdg = D_Gz # (1=n_last^D,b)
         return dLdZdg/D_Gz.shape[-1]
     
     def backward_g(self,D_Gz,Dprime_Gz):
-        # no minus sign so that default sgd_step will implement ascent
-        dLdZg = Dprime_Gz/(1-D_Gz + 1e-15) # (n0,1,b)
+        # sign appropriate for ascent
+        dLdZg = -1.0*Dprime_Gz/(D_Gz + 1e-15) # (n0,1,b)
+        # # sign appropriate for descent
+        # dLdZg = -1.0*Dprime_Gz/(1-D_Gz + 1e-15) # (n0,1,b)
         return np.squeeze(dLdZg,axis=1)/D_Gz.shape[-1] # (n0=n_last^G,b)
 #################
 
