@@ -93,8 +93,36 @@ class ReLU(Module,MLUtilities):
 
     def backward(self,dLdA,grad=None): 
         # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
-        dLdZ = np.zeros_like(self.A)
-        dLdZ[self.A > 0.0] = 1.0
+        dLdZ = np.ones_like(self.A)
+        dLdZ[self.A <= 0.0] = 0.0
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
+        return dLdZ
+    
+    def predict(self):
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
+#################
+
+
+
+#################
+class LReLU(Module,MLUtilities):
+    # leaky ReLU
+    net_type = 'reg'
+    threshold = 0.0
+    slope = 1e-2 # 0 <= slope < 1. slope = 0 is same as ReLU.
+    
+    def forward(self,Z):
+        self.A = np.maximum(self.slope*Z,Z)
+        return self.A
+
+    def backward(self,dLdA,grad=None): 
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        dLdZ = np.ones_like(self.A)
+        dLdZ[self.A <= 0.0] = self.slope
         if grad:
             dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
         dLdZ = dLdZ*dLdA
@@ -321,30 +349,30 @@ class Square(Module,MLUtilities):
         return dLdZ
 #################
 
-#################
-class LossGAN(Module,MLUtilities):
-    def forward(self,D_x,D_Gz):
-        # expect D_x, D_Gz of shape (1,b) and continuous in (0,1)
-        Loss = np.mean(np.log(D_x.flatten() + 1e-15)) + np.mean(np.log(1-D_Gz.flatten() + 1e-15))
-        return Loss
+# #################
+# class LossGAN(Module,MLUtilities):
+#     def forward(self,D_x,D_Gz):
+#         # expect D_x, D_Gz of shape (1,b) and continuous in (0,1)
+#         Loss = np.mean(np.log(D_x.flatten() + 1e-15)) + np.mean(np.log(1-D_Gz.flatten() + 1e-15))
+#         return Loss
 
-    def backward_dd(self,D_x):
-        # sign appropriate for ascent
-        dLdZdd = D_x - 1 # (1=n_last^D,b)
-        return dLdZdd/D_x.shape[-1]
+#     def backward_dd(self,D_x):
+#         # sign appropriate for ascent
+#         dLdZdd = D_x - 1 # (1=n_last^D,b)
+#         return dLdZdd/D_x.shape[-1]
 
-    def backward_dg(self,D_Gz):
-        # sign appropriate for ascent
-        dLdZdg = D_Gz # (1=n_last^D,b)
-        return dLdZdg/D_Gz.shape[-1]
+#     def backward_dg(self,D_Gz):
+#         # sign appropriate for ascent
+#         dLdZdg = D_Gz # (1=n_last^D,b)
+#         return dLdZdg/D_Gz.shape[-1]
     
-    def backward_g(self,D_Gz,Dprime_Gz):
-        # sign appropriate for ascent
-        dLdZg = -1.0*Dprime_Gz/(D_Gz + 1e-15) # (n0,1,b)
-        # # sign appropriate for descent
-        # dLdZg = -1.0*Dprime_Gz/(1-D_Gz + 1e-15) # (n0,1,b)
-        return np.squeeze(dLdZg,axis=1)/D_Gz.shape[-1] # (n0=n_last^G,b)
-#################
+#     def backward_g(self,D_Gz,Dprime_Gz):
+#         # sign appropriate for ascent
+#         dLdZg = -1.0*Dprime_Gz/(D_Gz + 1e-15) # (n0,1,b)
+#         # # sign appropriate for descent
+#         # dLdZg = -1.0*Dprime_Gz/(1-D_Gz + 1e-15) # (n0,1,b)
+#         return np.squeeze(dLdZg,axis=1)/D_Gz.shape[-1] # (n0=n_last^G,b)
+# #################
 
 #################
 class Hinge(Module,MLUtilities):
@@ -448,7 +476,7 @@ class Linear(Module,MLUtilities):
 #################################
 
 #################################
-def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold):
+def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,lrelu_slope=1e-2):
     """ Simple utility to produce modules for use in feed-forward networks. 
         Assumes all inputs have been checked. 
         Returns list of instantiated modules.
@@ -458,6 +486,10 @@ def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold):
     for l in range(1,L+1):
         if atypes[l-1] == 'relu':
             mod.append(ReLU(layer=l+1))
+        elif atypes[l-1] == 'lrelu':
+            mod_lrelu = LReLU(layer=l+1)
+            mod_lrelu.slope = lrelu_slope
+            mod.append(mod_lrelu)
         elif atypes[l-1] == 'tanh':
             mod.append(Tanh(layer=l+1))
         elif atypes[l-1] == 'sigm':
