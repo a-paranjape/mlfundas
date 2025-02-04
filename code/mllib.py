@@ -91,6 +91,16 @@ class MLUtilities(object):
         return 1 - th**2
     ###################
 
+    ###################
+    def clip(self,x,c):
+        """ Clip x to the range [-c,c]. Expect x to be array-like and c to be positive scalar. 
+            Returns array of x.shape truncated to this range, with outliers replaced by boundary values.
+        """
+        c_ones = c*np.ones_like(x)
+        return np.minimum(np.maximum(x,-1.0*c_ones),c_ones)
+    ###################
+
+    
 #################################
 # (structure courtesy MIT-OLL MLIntro Course)
 # Discrete distribution represented as a dictionary.  Can be

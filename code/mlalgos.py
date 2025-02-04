@@ -158,7 +158,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['data_dim']: int, input data dimension
             -- params['L']: int, L >= 1, number of layers
             -- params['n_layer']: list of L int, number of units in each layer. ** must have n_layer[-1] = y.shape[0] **
-            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','sm','lin'] or 'custom...'.
                                  If 'custom...', then also define dictionary params['custom_atypes']
             -- params['custom_atypes']: dictionary with keys matching 'custom...' entry in params['atypes']
                                         with items being activation module instances.
@@ -172,6 +172,7 @@ class Sequential(Module,MLUtilities,Utilities):
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
+            -- params['lrelu_slope']: float in (-1,1), slope of leaky ReLU if used (default 1e-2).
             -- params['wt_decay']: float, weight decay coefficient (should be non-negative; default 0.0)
             -- params['decay_norm']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
             -- params['reg_fun']: str, type of regularization.
@@ -201,6 +202,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.standardize = params.get('standardize',True)
         self.params['standardize'] = self.standardize # for consistency with self.save and self.load
         self.adam = params.get('adam',True)
+        self.lrelu_slope = params.get('lrelu_slope',1e-2)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
         self.wt_decay = params.get('wt_decay',0.0)
@@ -224,7 +226,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulate
-        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold)
+        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold,lrelu_slope=self.lrelu_slope)
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -236,6 +238,8 @@ class Sequential(Module,MLUtilities,Utilities):
                             +"]",self.logfile)
             self.print_this("... ... using last activation layer '"+self.atypes[-1]+"'",self.logfile)
             self.print_this("... ... ... with threshold (None means default): "+str(self.threshold),self.logfile)
+            if ('lrelu' in self.atypes):
+                self.print_this("... ... leaky ReLU will use slope = {0:.2e}".format(self.lrelu_slope),self.logfile)
             self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
             if self.reg_fun == 'drop':
                 self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
@@ -267,17 +271,17 @@ class Sequential(Module,MLUtilities,Utilities):
         if self.loss_type in ['square','hinge']:
             self.loss = Square() if self.loss_type == 'square' else Hinge()
             if self.verbose & (self.atypes[-1] != 'lin'):
-                self.print_this("Warning: last activation " + self.atypes[-1]
+                self.print_this("Warning!: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
         elif self.loss_type == 'nll':
             self.loss = NLL()
             if self.verbose & (self.atypes[-1] != 'sigm'):
-                self.print_this("Warning: last activation " + self.atypes[-1]
+                self.print_this("Warning!: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
         elif self.loss_type == 'nllm':
             self.loss = NLLM()
             if self.verbose & (self.atypes[-1] != 'sm'):
-                self.print_this("Warning: last activation " + self.atypes[-1]
+                self.print_this("Warning!: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
         elif self.loss_type[:6] == 'custom':
             if self.custom_loss is None:
@@ -290,7 +294,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
         if self.standardize & (self.loss_type != 'square'):
             if self.verbose:
-                self.print_this('Standardization incompatible with classification problems, switching off.',self.logfile)
+                self.print_this('Warning!: Standardization incompatible with classification problems, switching off.',self.logfile)
             self.standardize = False
 
         for l in range(self.L):
@@ -302,18 +306,24 @@ class Sequential(Module,MLUtilities,Utilities):
 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
-                print("reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
+                print("Warning!: reg_fun must be one of ['bn','drop','none'] in Sequential(). Setting to 'none'.")
             self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
 
         if self.wt_decay < 0.0:
             if self.verbose:
-                print("wt_decay must be non-negative in Sequential(). Setting to zero.")
+                print("Warning!: wt_decay must be non-negative in Sequential(). Setting to zero.")
             self.wt_decay = 0.0 # safest is 0.0 if user is unsure about role of weight decay
             
         if self.decay_norm not in [1,2]:
             if self.verbose:
-                print("decay_norm must be one of [1,2] in Sequential(). Setting to 2.")
+                print("Warning!: decay_norm must be one of [1,2] in Sequential(). Setting to 2.")
             self.decay_norm = 2 # safest is 2 if user is unsure about role of decay norm
+
+        if (self.lrelu_slope <= -1.0) | (self.lrelu_slope >= 1.0):
+            if self.verbose:
+                print("Warning!: lrelu_slope must be in range (-1,1) in GAN(). Setting to +1e-2.")
+            self.lrelu_slope = 1e-2
+            
 
     def forward(self,Xt): # update activations
         for m in self.modules:
@@ -1402,6 +1412,7 @@ class GAN(Module,MLUtilities,Utilities):
             params should be dictionary with a subset of following keys:
             ---- input
             -- params['data_dim']: int, data (X) dimension
+            -- params['rand_dim']: int, random (Z) dimension
 
             ---- network Gen
             -- params['Lg']: int, Lg >= 1, number of layers in generator Gen
@@ -1424,12 +1435,14 @@ class GAN(Module,MLUtilities,Utilities):
                                     ** must have n_layer_d[-1] = 1 (classification probability output) **
             -- params['atypes_d']: list of Ld str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_d']
-                                   ** must have atypes_d[-1] = 'sigm' (classification probability output) **
+                                   ** if gan_type = modified/minimax: must have atypes_d[-1] = 'sigm' (classification probability output) **
+                                   ** if gan_type =    wasserstein  : must have atypes_d[-1] = 'lin' or 'relu' or 'lrelu' (regression output) **
             -- params['custom_atypes_d']: dictionary with keys matching 'custom...' entry in params['atypes_d']
                                           with items being activation module instances.
             -- params['wt_decay_d']: float, weight decay coefficient (should be non-negative; default 0.0)
             -- params['decay_norm_d']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
             -- params['flip_freq']: float in (0,1), input labels to Disc will be flipped with probability flip_freq in each step (default None i.e. never).
+            -- params['clip']: float > 0, clipping parameter for use in Wasserstein GAN (default 0.01).
 
             ---- common
             -- params['gan_type']: str, specify GAN type: one of ['minimax','modified','wasserstein'] (default 'modified')
@@ -1438,7 +1451,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- params['noise']: None or float. If not None, add isotropic Gaussian noise with width 'noise'/t at step t 
                                 to both real and generated samples. (Default None)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
-            -- params['lrelu_slope']: float in [0,1), slope of leaky ReLU if used (default 1e-2).
+            -- params['lrelu_slope']: float in (-1,1), slope of leaky ReLU if used (default 1e-2).
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
                                   If 'drop', then value of 'p_drop' must be specified. Default 'none'.
@@ -1458,6 +1471,7 @@ class GAN(Module,MLUtilities,Utilities):
         self.gan_type = params.get('gan_type','modified')
         
         self.n0 = params.get('data_dim',None)
+        self.n0ran = params.get('rand_dim',None)
         self.Lg = int(params.get('Lg',1))
         self.n_layer_g = params.get('n_layer_g',[self.n0]) # last n_layer_g should be n0
         self.atypes_g = params.get('atypes_g',['lin']) 
@@ -1472,10 +1486,12 @@ class GAN(Module,MLUtilities,Utilities):
         self.wt_decay_d = params.get('wt_decay_d',0.0)
         self.decay_norm_d = int(params.get('decay_norm_d',2))
 
+        # training choices
         self.use_tanh = params.get('use_tanh',True)
         self.use_sigm = params.get('use_sigm',False)
         self.label_smoothing = params.get('label_smoothing',None)
         self.flip_freq = params.get('flip_freq',None)
+        self.clip = params.get('clip',0.01)
         self.noise = params.get('noise',None)
         
         self.standardize = params.get('standardize',True)
@@ -1501,17 +1517,18 @@ class GAN(Module,MLUtilities,Utilities):
             self.print_this("Setting up GAN with {0:d}-layer discriminator and {1:d}-layer generator".format(self.Ld,self.Lg),self.logfile)
             self.print_this("... ** assumes standard Gaussian noise prior at present **",self.logfile)
             
-        # self.loss = LossGAN()
-        self.loss = NLL()
-        self.net_type = 'reg'
-        
         self.check_init()
 
+        self.loss = NLL() if self.gan_type in ['modified','minimax'] else Wasserstein()
+        self.start_d = -2 if self.gan_type in ['modified','minimax'] else -1 # will control backward_d
+        self.net_type = 'reg'
+        
+        
         if self.verbose:
             self.print_this("... GAN type: "+self.gan_type,self.logfile)
         
         # output of Modulate
-        self.modules_g = Modulate(self.n0,self.n_layer_g,self.atypes_g,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_g,None,lrelu_slope=self.lrelu_slope)
+        self.modules_g = Modulate(self.n0ran,self.n_layer_g,self.atypes_g,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_g,None,lrelu_slope=self.lrelu_slope)
         self.modules_d = Modulate(self.n0,self.n_layer_d,self.atypes_d,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_d,None,lrelu_slope=self.lrelu_slope)
 
         # set last activation module net_type
@@ -1520,7 +1537,7 @@ class GAN(Module,MLUtilities,Utilities):
         
                 
         if self.verbose:
-            self.print_this("... ... expecting data dim = {0:d}, output dim = 1".format(self.n0),self.logfile)
+            self.print_this("... ... expecting data dim = {0:d}, random dim = {1:d}, output dim = 1".format(self.n0,self.n0ran),self.logfile)
             self.print_this("... ...  Gen using hidden layers of sizes ["
                             +','.join([str(self.n_layer_g[i]) for i in range(self.Lg)])
                             +"]",self.logfile)
@@ -1585,13 +1602,13 @@ class GAN(Module,MLUtilities,Utilities):
         if self.n0 is None:
             raise ValueError("data_dim must be specified in GAN()")
 
+        if self.n0ran is None:
+            raise ValueError("rand_dim must be specified in GAN()")
+        
         if self.gan_type not in  ['minimax','modified','wasserstein']:
             if self.verbose:
-                print("gan_type must be one of ['minimax','modified','wasserstein'] in GAN(). Setting to 'modified'.")
+                print("Warning!: gan_type must be one of ['minimax','modified','wasserstein'] in GAN(). Setting to 'modified'.")
             self.gan_type = 'modified'
-
-        if self.gan_type == 'wasserstein':
-            raise NotImplementedError("gan_type 'wasserstein' not yet implemented in GAN(). Try again with 'modified' or 'minimax'.")
             
         if len(self.atypes_g) != self.Lg:
             raise TypeError('Incompatible atypes_g in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Lg,len(self.atypes_g)))
@@ -1621,14 +1638,20 @@ class GAN(Module,MLUtilities,Utilities):
                 if self.atypes_d[l] not in list(self.custom_atypes_d.keys()):
                     raise ValueError("custom_atypes_d keys must contain "+self.atypes_d[l])
 
-        if self.atypes_d[-1] != 'sigm':
-            if self.verbose:
-                print("atypes_d[-1] must refer to Sigmoid activation in GAN(). Setting to 'sigm'.")
-            self.atypes_d[-1] = 'sigm'
+        if self.gan_type in ['minimax','modified']:
+            if self.atypes_d[-1] != 'sigm':
+                if self.verbose:
+                    print("Warning!: atypes_d[-1] must refer to Sigmoid activation for modified/minimax in GAN(). Setting to 'sigm'.")
+                self.atypes_d[-1] = 'sigm'
+        elif self.gan_type in ['wasserstein']:
+            if self.atypes_d[-1] not in ['lin','relu','lrelu','tanh']:
+                if self.verbose:
+                    print("Warning!: atypes_d[-1] must be in ['lin','relu','lrelu','tanh'] for Wasserstein in GAN(). Setting to 'lin'.")
+                self.atypes_d[-1] = 'lin'
 
         if (self.use_tanh & self.use_sigm):
             if self.verbose:
-                print("At most one of use_tanh and use_sigm can be True in GAN(). Setting use_tanh = True, use_sigm = False.")
+                print("Warning!: At most one of use_tanh and use_sigm can be True in GAN(). Setting use_tanh = True, use_sigm = False.")
             self.use_tanh = True
             self.use_sigm = False
             
@@ -1639,55 +1662,55 @@ class GAN(Module,MLUtilities,Utilities):
             self.last_atype_g = 'sigm'
         if self.atypes_g[-1] != self.last_atype_g:
             if self.verbose:
-                print("atypes_g[-1] activation must be one of ['lin','tanh','sigm'] acc to value of use_tanh,use_sigm in GAN(). Setting to "+self.last_atype_g)
+                print("Warning!: atypes_g[-1] activation must be one of ['lin','tanh','sigm'] acc to value of use_tanh,use_sigm in GAN(). Setting to "+self.last_atype_g)
             self.atypes_g[-1] = self.last_atype_g
                 
         if self.reg_fun not in ['bn','drop','none']:
             if self.verbose:
-                print("reg_fun must be one of ['bn','drop','none'] in GAN(). Setting to 'none'.")
+                print("Warning!: reg_fun must be one of ['bn','drop','none'] in GAN(). Setting to 'none'.")
             self.reg_fun = 'none' # safest is 'none' if user is trying something other than mini-batch.
 
         if self.wt_decay_g < 0.0:
             if self.verbose:
-                print("wt_decay_g must be non-negative in GAN(). Setting to zero.")
+                print("Warning!: wt_decay_g must be non-negative in GAN(). Setting to zero.")
             self.wt_decay_g = 0.0 # safest is 0.0 if user is unsure about role of weight decay
 
         if self.wt_decay_d < 0.0:
             if self.verbose:
-                print("wt_decay_d must be non-negative in GAN(). Setting to zero.")
+                print("Warning!: wt_decay_d must be non-negative in GAN(). Setting to zero.")
             self.wt_decay_d = 0.0 # safest is 0.0 if user is unsure about role of weight decay
             
         if self.decay_norm_g not in [1,2]:
             if self.verbose:
-                print("decay_norm_g must be one of [1,2] in GAN(). Setting to 2.")
+                print("Warning!: decay_norm_g must be one of [1,2] in GAN(). Setting to 2.")
             self.decay_norm_g = 2 # safest is 2 if user is unsure about role of decay norm
             
         if self.decay_norm_d not in [1,2]:
             if self.verbose:
-                print("decay_norm_d must be one of [1,2] in GAN(). Setting to 2.")
+                print("Warning!: decay_norm_d must be one of [1,2] in GAN(). Setting to 2.")
             self.decay_norm_d = 2 # safest is 2 if user is unsure about role of decay norm
 
         if self.label_smoothing is not None:
             if (self.label_smoothing < 0.0) | (self.label_smoothing > 0.5):
                 if self.verbose:
-                    print("label_smoothing must be None or in range (0,0.5) in GAN(). Setting to None.")
+                    print("Warning!: label_smoothing must be None or in range (0,0.5) in GAN(). Setting to None.")
                 self.label_smoothing = None
 
         if self.flip_freq is not None:
             if (self.flip_freq < 0.0) | (self.flip_freq > 1.0):
                 if self.verbose:
-                    print("flip_freq must be None or float in (0,1) in GAN(). Setting to None.")
+                    print("Warning!: flip_freq must be None or float in (0,1) in GAN(). Setting to None.")
                 self.flip_freq = None
 
-        if (self.lrelu_slope < 0.0) | (self.lrelu_slope >= 1.0):
+        if (self.lrelu_slope <= -1.0) | (self.lrelu_slope >= 1.0):
             if self.verbose:
-                print("lrelu_slope must be in range [0,1) in GAN(). Setting to 1e-2.")
+                print("Warning!: lrelu_slope must be in range (-1,1) in GAN(). Setting to +1e-2.")
             self.lrelu_slope = 1e-2
 
         if self.noise is not None:
             if self.noise < 0.0:
                 if self.verbose:
-                    print("noise must be non-negative in GAN(). Setting to None.")
+                    print("Warning!: noise must be non-negative in GAN(). Setting to None.")
                 self.noise = None
             
         return
@@ -1702,14 +1725,14 @@ class GAN(Module,MLUtilities,Utilities):
             Xt = m.forward(Xt)
         return Xt
 
-    def backward_d(self,delta): # update gradients
-        for m in self.modules_d[-2::-1]:
-            # reverse order, expect first input = dL/dZd
+    def backward_d(self,delta,start=-2): # update gradients
+        for m in self.modules_d[start::-1]:
+            # reverse order, expect first input = dL/dZd when start=-2, dL/dAd when start=-1
             delta = m.backward(delta)
 
     def backward_g(self,delta): # update gradients
         for m in self.modules_g[-1::-1]:
-            # reverse order, expect first input = dL/dAg
+            # reverse order, always expect first input = dL/dAg
             delta = m.backward(delta)
 
     def sgd_step_d(self,t,lrate): # update weights (GD update)
@@ -1758,8 +1781,8 @@ class GAN(Module,MLUtilities,Utilities):
     
     def generate(self,Z):
         """ Generate targets for given noise realization. """
-        if Z.shape[0] != self.n0:
-            raise TypeError("Incompatible data in GAN.generate(). Expected {0:d}, got {1:d}".format(self.n0,Z.shape[0]))
+        if Z.shape[0] != self.n0ran:
+            raise TypeError("Incompatible data in GAN.generate(). Expected {0:d}, got {1:d}".format(self.n0ran,Z.shape[0]))
         # update all activations and generate.
         G = self.forward_g(Z)
         if self.standardize:
@@ -1842,7 +1865,7 @@ class GAN(Module,MLUtilities,Utilities):
         """ Utility to calculate number of free parameters being optimized. """
         N = 0
         for l in range(self.Lg):
-            n_lm1 = 1*self.n0 if l==0 else 1*self.n_layer_g[l-1]
+            n_lm1 = 1*self.n0ran if l==0 else 1*self.n_layer_g[l-1]
             N += self.n_layer_g[l]*(n_lm1 + 1)
             
         for l in range(self.Ld):
@@ -1850,198 +1873,6 @@ class GAN(Module,MLUtilities,Utilities):
             N += self.n_layer_d[l]*(n_lm1 + 1)
             
         return N
-
-    
-    def train_old(self,X,params={}):
-        """ Main routine for training. 
-            Expect training sample X.shape = (n0,n_samp) = Z.shape
-            params should be dictionary with keywords:
-            -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
-            -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
-            -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
-            -- 'val_frac': float, fraction of input data to use for validation
-            -- 'mb_count': None or int >= 1, number of mini-batches. If None (default), will be set to int(sqrt(X.shape[1]*(1-val_frac))) 
-            -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
-        """
-        max_epoch_d = params.get('max_epoch_d',1)
-        max_epoch_g = params.get('max_epoch_g',100)
-        lrate_d = params.get('lrate_d',0.005)
-        lrate_g = params.get('lrate_g',0.005)
-        mb_count = params.get('mb_count',None)
-        val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
-        check_after = params.get('check_after',10)
-        
-        if self.verbose:
-            self.print_this("... training",self.logfile)
-            
-        d,n_samp = X.shape
-
-        if d != self.n0:
-            raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
-
-        n_val = np.rint(val_frac*n_samp).astype(int)
-        n_samp -= n_val        
-
-        if n_val > 0:
-            ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
-            ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
-        else:
-            ind_train = np.arange(X.shape[1])
-
-        X_train = X[:,ind_train].copy()
-        if n_val > 0:
-            X_val = X[:,ind_val].copy()
-            
-        if self.standardize:
-            self.X_std = np.std(X,axis=1)
-            self.X_mean = np.mean(X,axis=1)
-            self.params['X_std'] = self.X_std
-            self.params['X_mean'] = self.X_mean
-            X_train -= self.X_mean
-            X_train /= (self.X_std + 1e-15)
-            if self.use_tanh:
-                # additional tanh standardization so that values in (-1,1)
-                X_train = np.tanh(X_train)
-            elif self.use_sigm:
-                # additional sigmoid standardization so that values in (0,1)
-                X_train = 1/(1+np.exp(-X_train))
-            if n_val > 0:
-                X_val -= self.X_mean
-                X_val /= (self.X_std + 1e-15)
-                if self.use_tanh:
-                    # additional tanh standardization so that values in (-1,1)
-                    X_val = np.tanh(X_val)
-                elif self.use_sigm:
-                    # additional sigmoid standardization so that values in (0,1)
-                    X_val = 1/(1+np.exp(-X_val))
-
-        if mb_count is None:
-            if self.verbose:
-                print_str = "... no mb_count specified. Setting to int(sqrt(n_samp))."
-                self.print_this(print_str,self.logfile)
-            mb_count = int(np.sqrt(n_samp))
-        else:
-            if (mb_count > n_samp) | (mb_count < 1):
-                if self.verbose:
-                    self.print_this("... incompatible mb_count in GAN.train(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
-                                    self.logfile)
-                mb_count = n_samp
-            if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
-                if self.verbose:
-                    print_str = "... large mb_count might lead to uneven mini-batch sizes in GAN.train()."
-                    print_str += " Setting to int(sqrt(n_samp))."
-                    self.print_this(print_str,self.logfile)
-                mb_count = int(np.sqrt(n_samp))
-            
-        mb_size = n_samp // mb_count
-
-        self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
-        self.disc_loss = np.zeros(max_epoch_g*max_epoch_d)
-        self.epochs = np.arange(max_epoch_g)+1.0
-        self.gen_loss = np.zeros(max_epoch_g)
-        ind_shuff = np.arange(n_samp)
-        for t in range(max_epoch_g):
-            ###########################
-            # outer loop for training G
-            for k in range(max_epoch_d):
-                ###########################
-                # inner loop for training D
-                self.rng.shuffle(ind_shuff)
-                X_train_shuff = X_train[:,ind_shuff].copy()
-                for b in range(mb_count):
-                    sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
-                    
-                    # update activations, calculate D loss gradients and perform gradient update for actual data mini-batch
-                    data = X_train_shuff[:,sl].copy()
-                    D_x = self.forward_d(data)
-                    batch_loss = self.loss.forward(D_x,np.ones_like(D_x))
-                    dLdZdd = self.loss.backward()
-                    self.backward_d(dLdZdd) 
-                    # gradient descent update for D (will account for weight decay if requested)
-                    self.sgd_step_d(t,lrate_d) 
-                    
-                    # update activations, calculate D loss gradients and perform gradient update for randoms mini-batch
-                    random = self.noise_prior(data.shape[0],data.shape[1])
-                    G = self.forward_g(random)
-                    D_Gz = self.forward_d(G)
-                    batch_loss += self.loss.forward(D_Gz,np.zeros_like(D_Gz))
-                    dLdZdg = self.loss.backward()
-                    self.backward_d(dLdZdg) 
-                    # gradient descent update for D (will account for weight decay if requested)
-                    self.sgd_step_d(t,lrate_d) 
-
-                    if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
-                        batch_loss += self.calc_loss_decay()
-                    self.disc_loss[k + t*max_epoch_d] += batch_loss/mb_count
-
-                # end inner loop
-                ###########################
-            # perform single G update
-            random = self.noise_prior(X.shape[0],mb_size) 
-
-            # update activations and calculate G loss gradients for randoms mini-batch
-            G = self.forward_g(random)
-            D_Gz = self.forward_d(G)
-            Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
-            if self.gan_type == 'minimax':
-                D_Gz = 1 - D_Gz
-            elif self.gan_type == 'wasserstein':
-                raise NotImplementedError("'wasserstein' not implemented yet!")
-            dLdZg = -1.0*np.squeeze(Dprime_Gz/(D_Gz + 1e-15),axis=1) # (n0,b)
-            self.backward_g(dLdZg) 
-
-            # gradient descent update for G (will account for weight decay if requested)
-            self.sgd_step_g(t,lrate_g) 
-                
-            ######### NEED TO THINK ABOUT VALIDATION CHECK #############
-            ##### (recall 'loss' is not simply to be minimized) ########
-            # # validation check
-            # if n_val > 0:
-            #     # update activations. prediction for validation data
-            #     D_x_val = self.forward_d(X_val)
-            #     random = self.noise_prior(X_val.shape[0],X_val.shape[1]) # so noise changes in every validation step
-            #     G_val = self.forward_g(random)
-            #     D_Gz_val = self.forward_d(G_val)
-                
-            #     # calculate validation loss
-            #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
-            #     if (self.wt_decay_g > 0.0):
-            #         val_loss += self.calc_loss_decay()
-            #     self.val_loss[t] = val_loss
-                
-            #     if t > check_after:
-            #         x = np.arange(t-check_after,t+1)
-            #         y = self.val_loss[x].copy()
-            #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
-            #             if self.verbose:
-            #                 self.print_this('',self.logfile)
-            #             break
-            
-            if self.verbose:
-                self.status_bar(t,max_epoch_g)
-            # end outer loop
-            ###########################
-
-        if self.reg_fun == 'drop':
-            if self.verbose:
-                self.print_this("... correcting for drop regularization",self.logfile)
-            # convert DropNorm layers to effectively Identity
-            for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.drop = False
-            for m in self.modules_g[2::3]: 
-                m.drop = False
-                
-            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
-            # biases untouched.
-            for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.W *= (1-self.p_drop)
-            for m in self.modules_g[::3]: 
-                m.W *= (1-self.p_drop)
-                
-        if self.verbose:
-            self.print_this("... ... done",self.logfile)
-            
-        return
 
     
     def train(self,X,params={}):
@@ -2067,7 +1898,7 @@ class GAN(Module,MLUtilities,Utilities):
         d,n_samp = X.shape
 
         if d != self.n0:
-            raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
+            raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}, got {1:d}".format(self.n0,d))
 
         # n_val = np.rint(val_frac*n_samp).astype(int)
         # n_samp -= n_val        
@@ -2146,29 +1977,29 @@ class GAN(Module,MLUtilities,Utilities):
                     if self.rng.rand() < self.flip_freq:
                         labels *= 0.0
                         if self.label_smoothing is not None:
-                            labels += label_noise # labels are random between (0,ls)
+                            labels += label_noise # labels are random between (0,ls) or (-1,-1+ls)
                 elif self.label_smoothing is not None:
                     labels += 2*label_noise - self.label_smoothing # labels are random between (1-ls,1+ls)
                 batch_loss = self.loss.forward(D_x,labels)
                 dLdZdd = self.loss.backward()
-                self.backward_d(dLdZdd) 
+                self.backward_d(dLdZdd,start=self.start_d) 
                 # gradient descent update for D (will account for weight decay if requested)
                 self.sgd_step_d(t,lrate_d) 
                     
                 # update activations, calculate D loss gradients and perform gradient update for randoms mini-batch
-                random = self.noise_prior(data.shape[0],data.shape[1])
+                random = self.noise_prior(self.n0ran,data.shape[1])
                 G = self.forward_g(random)
                 if self.noise is not None:
                     G += (self.noise/(tk+1))*self.rng.randn(G.shape[0],G.shape[1])
                 D_Gz = self.forward_d(G)
                 labels = np.zeros_like(D_Gz)
                 if self.label_smoothing is not None:
-                    labels += label_noise # labels are random between (0,ls)
+                    labels += label_noise # labels are random between (0,ls) or (-1,-1+ls)
                 batch_loss += self.loss.forward(D_Gz,labels)
                 dLdZdg = self.loss.backward()
-                self.backward_d(dLdZdg) 
+                self.backward_d(dLdZdg,start=self.start_d) 
                 # gradient descent update for D (will account for weight decay if requested)
-                self.sgd_step_d(t,lrate_d) 
+                self.sgd_step_d(t,lrate_d)
 
                 if (self.wt_decay_d > 0.0):
                     batch_loss += self.calc_loss_decay('d')
@@ -2181,17 +2012,17 @@ class GAN(Module,MLUtilities,Utilities):
                 # end inner loop
                 ###########################
             # perform single G update
-            random = self.noise_prior(X.shape[0],mb_size) 
+            random = self.noise_prior(self.n0ran,mb_size) 
 
             # update activations and calculate G loss gradients for randoms mini-batch
             G = self.forward_g(random)
             D_Gz = self.forward_d(G)
-            Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
+            Dprime_Gz = self.gradient_d(G) # (n0,1,b) # CAUGHT A BUG! .. had D_Gz instead of G!!
             if self.gan_type == 'minimax':
                 D_Gz = 1 - D_Gz
             elif self.gan_type == 'wasserstein':
-                raise NotImplementedError("'wasserstein' not implemented yet!")
-            dLdAg = -1.0*np.squeeze(Dprime_Gz/(D_Gz + 1e-15),axis=1) # (n0,b)
+                D_Gz = np.ones_like(D_Gz) - 1e-15
+            dLdAg = -1.0*np.squeeze(Dprime_Gz/(D_Gz + 1e-15),axis=1)/mb_size # (n0,b)
             self.backward_g(dLdAg) 
 
             # gradient descent update for G (will account for weight decay if requested)
@@ -2199,18 +2030,16 @@ class GAN(Module,MLUtilities,Utilities):
 
             # validation check
             # update activations. prediction for validation data
-            random = self.noise_prior(X.shape[0],X.shape[1]) # so noise changes in every validation step
+            random = self.noise_prior(self.n0ran,X.shape[1]) # so noise changes in every validation step
             G_val = self.forward_g(random)
             D_Gz_val = self.forward_d(G_val)
 
             # calculate validation loss
-            if self.gan_type == 'minimax':
+            if self.gan_type in ['minimax','wasserstein']:
                 gen_loss = self.loss.forward(D_Gz_val,np.zeros_like(D_Gz_val))
             elif self.gan_type == 'modified':
                 gen_loss = self.loss.forward(D_Gz_val,np.ones_like(D_Gz_val))
-            else:
-                raise NotImplementedError("Validation loss: only 'minimax' and 'modified' GANs implemented so far!")
-            
+           
             if (self.wt_decay_g > 0.0):
                 gen_loss += self.calc_loss_decay('g')
             self.gen_loss[t] = gen_loss/X.shape[1]
@@ -2221,10 +2050,8 @@ class GAN(Module,MLUtilities,Utilities):
                 bf_slope = np.mean(x*y)-np.mean(x)*np.mean(y) # best fit slope
                 if self.gan_type == 'minimax':
                     slope_cond = (bf_slope < 0.0) 
-                elif self.gan_type == 'modified':
-                    slope_cond = (bf_slope > 0.0) 
                 else:
-                    raise NotImplementedError("Validation loss: only 'minimax' and 'modified' GANs implemented so far!")
+                    slope_cond = (bf_slope > 0.0) 
                 if slope_cond: # check for appropriate sign of best fit slope
                     if self.verbose:
                         self.print_this('',self.logfile)
@@ -2256,6 +2083,197 @@ class GAN(Module,MLUtilities,Utilities):
             
         return
 
+    
+    # def train_old(self,X,params={}):
+    #     """ Main routine for training. 
+    #         Expect training sample X.shape = (n0,n_samp) = Z.shape
+    #         params should be dictionary with keywords:
+    #         -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
+    #         -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
+    #         -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
+    #         -- 'val_frac': float, fraction of input data to use for validation
+    #         -- 'mb_count': None or int >= 1, number of mini-batches. If None (default), will be set to int(sqrt(X.shape[1]*(1-val_frac))) 
+    #         -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
+    #     """
+    #     max_epoch_d = params.get('max_epoch_d',1)
+    #     max_epoch_g = params.get('max_epoch_g',100)
+    #     lrate_d = params.get('lrate_d',0.005)
+    #     lrate_g = params.get('lrate_g',0.005)
+    #     mb_count = params.get('mb_count',None)
+    #     val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
+    #     check_after = params.get('check_after',10)
+        
+    #     if self.verbose:
+    #         self.print_this("... training",self.logfile)
+            
+    #     d,n_samp = X.shape
+
+    #     if d != self.n0:
+    #         raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
+
+    #     n_val = np.rint(val_frac*n_samp).astype(int)
+    #     n_samp -= n_val        
+
+    #     if n_val > 0:
+    #         ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
+    #         ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+    #     else:
+    #         ind_train = np.arange(X.shape[1])
+
+    #     X_train = X[:,ind_train].copy()
+    #     if n_val > 0:
+    #         X_val = X[:,ind_val].copy()
+            
+    #     if self.standardize:
+    #         self.X_std = np.std(X,axis=1)
+    #         self.X_mean = np.mean(X,axis=1)
+    #         self.params['X_std'] = self.X_std
+    #         self.params['X_mean'] = self.X_mean
+    #         X_train -= self.X_mean
+    #         X_train /= (self.X_std + 1e-15)
+    #         if self.use_tanh:
+    #             # additional tanh standardization so that values in (-1,1)
+    #             X_train = np.tanh(X_train)
+    #         elif self.use_sigm:
+    #             # additional sigmoid standardization so that values in (0,1)
+    #             X_train = 1/(1+np.exp(-X_train))
+    #         if n_val > 0:
+    #             X_val -= self.X_mean
+    #             X_val /= (self.X_std + 1e-15)
+    #             if self.use_tanh:
+    #                 # additional tanh standardization so that values in (-1,1)
+    #                 X_val = np.tanh(X_val)
+    #             elif self.use_sigm:
+    #                 # additional sigmoid standardization so that values in (0,1)
+    #                 X_val = 1/(1+np.exp(-X_val))
+
+    #     if mb_count is None:
+    #         if self.verbose:
+    #             print_str = "... no mb_count specified. Setting to int(sqrt(n_samp))."
+    #             self.print_this(print_str,self.logfile)
+    #         mb_count = int(np.sqrt(n_samp))
+    #     else:
+    #         if (mb_count > n_samp) | (mb_count < 1):
+    #             if self.verbose:
+    #                 self.print_this("... incompatible mb_count in GAN.train(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
+    #                                 self.logfile)
+    #             mb_count = n_samp
+    #         if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
+    #             if self.verbose:
+    #                 print_str = "... large mb_count might lead to uneven mini-batch sizes in GAN.train()."
+    #                 print_str += " Setting to int(sqrt(n_samp))."
+    #                 self.print_this(print_str,self.logfile)
+    #             mb_count = int(np.sqrt(n_samp))
+            
+    #     mb_size = n_samp // mb_count
+
+    #     self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
+    #     self.disc_loss = np.zeros(max_epoch_g*max_epoch_d)
+    #     self.epochs = np.arange(max_epoch_g)+1.0
+    #     self.gen_loss = np.zeros(max_epoch_g)
+    #     ind_shuff = np.arange(n_samp)
+    #     for t in range(max_epoch_g):
+    #         ###########################
+    #         # outer loop for training G
+    #         for k in range(max_epoch_d):
+    #             ###########################
+    #             # inner loop for training D
+    #             self.rng.shuffle(ind_shuff)
+    #             X_train_shuff = X_train[:,ind_shuff].copy()
+    #             for b in range(mb_count):
+    #                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
+                    
+    #                 # update activations, calculate D loss gradients and perform gradient update for actual data mini-batch
+    #                 data = X_train_shuff[:,sl].copy()
+    #                 D_x = self.forward_d(data)
+    #                 batch_loss = self.loss.forward(D_x,np.ones_like(D_x))
+    #                 dLdZdd = self.loss.backward()
+    #                 self.backward_d(dLdZdd) 
+    #                 # gradient descent update for D (will account for weight decay if requested)
+    #                 self.sgd_step_d(t,lrate_d) 
+                    
+    #                 # update activations, calculate D loss gradients and perform gradient update for randoms mini-batch
+    #                 random = self.noise_prior(self.n0ran,data.shape[1])
+    #                 G = self.forward_g(random)
+    #                 D_Gz = self.forward_d(G)
+    #                 batch_loss += self.loss.forward(D_Gz,np.zeros_like(D_Gz))
+    #                 dLdZdg = self.loss.backward()
+    #                 self.backward_d(dLdZdg) 
+    #                 # gradient descent update for D (will account for weight decay if requested)
+    #                 self.sgd_step_d(t,lrate_d) 
+
+    #                 if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
+    #                     batch_loss += self.calc_loss_decay()
+    #                 self.disc_loss[k + t*max_epoch_d] += batch_loss/mb_count
+
+    #             # end inner loop
+    #             ###########################
+    #         # perform single G update
+    #         random = self.noise_prior(self.n0ran,mb_size) 
+
+    #         # update activations and calculate G loss gradients for randoms mini-batch
+    #         G = self.forward_g(random)
+    #         D_Gz = self.forward_d(G)
+    #         Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
+    #         if self.gan_type == 'minimax':
+    #             D_Gz = 1 - D_Gz
+    #         elif self.gan_type == 'wasserstein':
+    #             raise NotImplementedError("'wasserstein' not implemented yet!")
+    #         dLdZg = -1.0*np.squeeze(Dprime_Gz/(D_Gz + 1e-15),axis=1) # (n0,b)
+    #         self.backward_g(dLdZg) 
+
+    #         # gradient descent update for G (will account for weight decay if requested)
+    #         self.sgd_step_g(t,lrate_g) 
+                
+    #         ######### NEED TO THINK ABOUT VALIDATION CHECK #############
+    #         ##### (recall 'loss' is not simply to be minimized) ########
+    #         # # validation check
+    #         # if n_val > 0:
+    #         #     # update activations. prediction for validation data
+    #         #     D_x_val = self.forward_d(X_val)
+    #         #     random = self.noise_prior(self.n0ran,X_val.shape[1]) # so noise changes in every validation step
+    #         #     G_val = self.forward_g(random)
+    #         #     D_Gz_val = self.forward_d(G_val)
+                
+    #         #     # calculate validation loss
+    #         #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
+    #         #     if (self.wt_decay_g > 0.0):
+    #         #         val_loss += self.calc_loss_decay()
+    #         #     self.val_loss[t] = val_loss
+                
+    #         #     if t > check_after:
+    #         #         x = np.arange(t-check_after,t+1)
+    #         #         y = self.val_loss[x].copy()
+    #         #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
+    #         #             if self.verbose:
+    #         #                 self.print_this('',self.logfile)
+    #         #             break
+            
+    #         if self.verbose:
+    #             self.status_bar(t,max_epoch_g)
+    #         # end outer loop
+    #         ###########################
+
+    #     if self.reg_fun == 'drop':
+    #         if self.verbose:
+    #             self.print_this("... correcting for drop regularization",self.logfile)
+    #         # convert DropNorm layers to effectively Identity
+    #         for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+    #             m.drop = False
+    #         for m in self.modules_g[2::3]: 
+    #             m.drop = False
+                
+    #         # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
+    #         # biases untouched.
+    #         for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+    #             m.W *= (1-self.p_drop)
+    #         for m in self.modules_g[::3]: 
+    #             m.W *= (1-self.p_drop)
+                
+    #     if self.verbose:
+    #         self.print_this("... ... done",self.logfile)
+            
+    #     return
 
     # def train(self,X,params={}):
     #     """ Main routine for training. 
@@ -2348,7 +2366,7 @@ class GAN(Module,MLUtilities,Utilities):
     #             for b in range(mb_count):
     #                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
     #                 data = X_train_shuff[:,sl].copy()
-    #                 random = self.noise_prior(data.shape[0],data.shape[1])
+    #                 random = self.noise_prior(self.n0ran,data.shape[1])
 
     #                 # note no issues calling loss.backward_** before loss.forward since LossGAN doesn't store/update any internal attributes
                     
@@ -2374,7 +2392,7 @@ class GAN(Module,MLUtilities,Utilities):
     #             # end inner loop
     #             ###########################
     #         for b in range(mb_count):
-    #             random = self.noise_prior(X.shape[0],mb_size) # may not match with inner loop for last mini-batch, but not an issue
+    #             random = self.noise_prior(self.n0ran,mb_size) # may not match with inner loop for last mini-batch, but not an issue
 
     #             # update activations and calculate G loss gradients for mini-batch
     #             G = self.forward_g(random)
@@ -2394,7 +2412,7 @@ class GAN(Module,MLUtilities,Utilities):
     #         # if n_val > 0:
     #         #     # update activations. prediction for validation data
     #         #     D_x_val = self.forward_d(X_val)
-    #         #     random = self.noise_prior(X_val.shape[0],X_val.shape[1]) # so noise changes in every validation step
+    #         #     random = self.noise_prior(self.n0ran,X_val.shape[1]) # so noise changes in every validation step
     #         #     G_val = self.forward_g(random)
     #         #     D_Gz_val = self.forward_d(G_val)
                 

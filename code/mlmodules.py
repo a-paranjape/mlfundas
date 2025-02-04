@@ -113,7 +113,7 @@ class LReLU(Module,MLUtilities):
     # leaky ReLU
     net_type = 'reg'
     threshold = 0.0
-    slope = 1e-2 # 0 <= slope < 1. slope = 0 is same as ReLU.
+    slope = 1e-2 # -1 < slope < 1. slope = 0 is same as ReLU.
     
     def forward(self,Z):
         self.A = np.maximum(self.slope*Z,Z)
@@ -347,6 +347,22 @@ class Square(Module,MLUtilities):
     def backward(self):
         dLdZ = 2*(self.Ypred - self.Y) # (n_last,b)
         return dLdZ
+#################
+
+#################
+class Wasserstein(Module,MLUtilities):
+    # for use in Earth Mover (Wasserstein-1) loss
+    def forward(self,Ypred,Y):
+        self.Ypred = Ypred # (1,b)
+        self.Y = Y
+        self.Y[self.Y < 0] = 0.0 # ensure only 0 or 1 passed as Y
+        Loss = (2*self.Y - 1)*self.Ypred
+        return np.sum(Loss) # scalar
+
+    def backward(self):
+        # sign will account for gradient ascent
+        dLdA = -1.0*(2*self.Y - 1) # (n_last,b)
+        return dLdA
 #################
 
 # #################
