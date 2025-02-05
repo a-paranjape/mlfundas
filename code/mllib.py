@@ -105,7 +105,7 @@ class MLUtilities(object):
     def FID(self,X1,X2):
         """ Calculate Frechet Inception Distance (FID) between two data sets.
             Based on eqn 6 of Heusel+ arXiv:1706.08500.
-            -- X1, X2: data sets of shape (d,n1), d(n2) respectively.
+            -- X1, X2: data sets of shape (d,n1), (d,n2) respectively.
             Returns scalar value of FID.
         """
         nd = X1.shape[0]
@@ -128,12 +128,12 @@ class MLUtilities(object):
     def KLGauss(self,X1,X2):
         """ Calculate Kullbach-Liebler divergence D(X1||X2) between two data sets, assuming each is Gaussian distributed.
             Currently assumes cov(X2) is invertible.
-            -- X1, X2: data sets of shape (d,n1), d(n2) respectively.
+            -- X1, X2: data sets of shape (d,n1), (d,n2) respectively.
             Returns scalar value of KL divergence.
         """
         nd = X1.shape[0]
         if X2.shape[0] != nd:
-            raise Exception("Expecting equal first dimension of X1 and X2 in FID(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+            raise Exception("Expecting equal first dimension of X1 and X2 in KLGauss(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
         
         mu1 = np.mean(X1,axis=1)
         cov1 = np.cov(X1)
@@ -152,6 +152,29 @@ class MLUtilities(object):
         
         return kld
     ###################
+
+
+    ###################
+    def nongauss_diff(self,X1,X2,mom=3):
+        """ Calculate mean difference in dimension-wise non-Gaussian moments between 2 data sets.
+            -- X1, X2: data sets of shape (d,n1), (d,n2) respectively.
+            Returns scalar value of mean of absolute difference in non-Gaussian moment along each direction.
+        """
+        nd = X1.shape[0]
+        if X2.shape[0] != nd:
+            raise Exception("Expecting equal first dimension of X1 and X2 in skew_diff(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+        
+        mu1 = np.mean(X1,axis=1)
+        ng1 = np.mean((X1 - mu1)**mom,axis=1)/(np.std(X1,axis=1)**mom + 1e-15)
+        
+        mu2 = np.mean(X2,axis=1)
+        ng2 = np.mean((X2 - mu2)**mom,axis=1)/(np.std(X2,axis=1)**mom + 1e-15)
+
+        mom_diff = np.mean(np.fabs(ng1 - ng2))
+        return mom_diff
+    ###################
+
+    
     
 #################################
 # (structure courtesy MIT-OLL MLIntro Course)

@@ -1885,7 +1885,11 @@ class GAN(Module,MLUtilities,Utilities):
             -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
             -- 'val_frac': float < 1, fraction of data to be reserved for validation (default 0.2)
             -- 'mb_size': None or int >= 1, size of mini-batches. If None (default), will be set to int((X.shape[1]*(1-val_frac))/2) 
-            -- 'stop_criterion': string, one of ['fid' (Frechet inception distance),'klg' (Gaussianized KL divergence)]. Default 'fid' 
+            -- 'stop_criterion': string, one of ['fid','fid_sk','klg','klg_sk']. 
+                                 'fid': Frechet inception distance.
+                                 'klg': Gaussianized KL divergence.
+                                 '_sk': above plus mean over 1-d skewness and kurtosis. 
+                                 Default 'fid'.
             -- 'check_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
         """
         max_epoch_d = params.get('max_epoch_d',1)
@@ -1905,10 +1909,18 @@ class GAN(Module,MLUtilities,Utilities):
         if d != self.n0:
             raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}, got {1:d}".format(self.n0,d))
 
-        if stop_criterion not in ['fid','klg']:
+        if stop_criterion not in ['fid','klg','fid_sk','klg_sk']:
             if self.verbose:
-                self.print_this("Unknown stop_criterion '"+str(stop_criterion)+"' detected in GAN.train() (expected ['fid','klg']). Setting to 'fid'.",self.logfile)
+                self.print_this("Unknown stop_criterion '"+str(stop_criterion)+"' detected in GAN.train() (expected ['fid','klg','fid_sk','klg_sk']). Setting to 'fid'.",
+                                self.logfile)
             stop_criterion = 'fid'
+
+        if self.verbose:
+            sc_str = 'FID' if stop_criterion[:3] == 'fid' else 'KLGauss'
+            self.print_this("... ... stop criterion: "+sc_str,self.logfile)
+            if stop_criterion[-3:] == '_sk':
+                self.print_this("... ... including 1-d skewness & kurtosis differences",self.logfile)
+        
 
         n_val = np.rint(val_frac*n_samp).astype(int)
         n_samp -= n_val        
@@ -2047,10 +2059,17 @@ class GAN(Module,MLUtilities,Utilities):
             D_Gz_val = self.forward_d(G_val)
 
             # calculate validation loss
-            stop_fun = self.FID
-            if stop_criterion == 'klg':
+            if stop_criterion in ['fid','fid_sk']:
+                stop_fun = self.FID
+            elif stop_criterion in ['klg','klg_sk']:
                 stop_fun = self.KLGauss
-            self.gen_loss[t] = stop_fun(G_val,X_val)
+
+            gen_loss = stop_fun(G_val,X_val)
+            if stop_criterion[-3:] == '_sk':
+                gen_loss += self.nongauss_diff(G_val,X_val,mom=3)
+                gen_loss += self.nongauss_diff(G_val,X_val,mom=4)
+            self.gen_loss[t] = gen_loss
+            
             
             # # calculate validation loss (Wasserstein distance)
             # self.gen_loss[t] = np.mean(D_x_val - D_Gz_val) 
