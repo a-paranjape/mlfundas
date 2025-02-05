@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import linalg
 from utilities import Utilities
 
 #############################################
@@ -100,6 +101,57 @@ class MLUtilities(object):
         return np.minimum(np.maximum(x,-1.0*c_ones),c_ones)
     ###################
 
+    ###################
+    def FID(self,X1,X2):
+        """ Calculate Frechet Inception Distance (FID) between two data sets.
+            Based on eqn 6 of Heusel+ arXiv:1706.08500.
+            -- X1, X2: data sets of shape (d,n1), d(n2) respectively.
+            Returns scalar value of FID.
+        """
+        nd = X1.shape[0]
+        if X2.shape[0] != nd:
+            raise Exception("Expecting equal first dimension of X1 and X2 in FID(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+        
+        mu1 = np.mean(X1,axis=1)
+        cov1 = np.cov(X1)
+        mu2 = np.mean(X2,axis=1)
+        cov2 = np.cov(X2)
+
+        fid = np.sum((mu1 - mu2)**2)
+        fid += (np.trace(cov1 + cov2 - 2*linalg.sqrtm(np.dot(cov1,cov2))) if nd > 1 else (cov1 + cov2 - 2*np.sqrt(cov1*cov2)))
+
+        return fid
+    ###################
+
+
+    ###################
+    def KLGauss(self,X1,X2):
+        """ Calculate Kullbach-Liebler divergence D(X1||X2) between two data sets, assuming each is Gaussian distributed.
+            Currently assumes cov(X2) is invertible.
+            -- X1, X2: data sets of shape (d,n1), d(n2) respectively.
+            Returns scalar value of KL divergence.
+        """
+        nd = X1.shape[0]
+        if X2.shape[0] != nd:
+            raise Exception("Expecting equal first dimension of X1 and X2 in FID(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+        
+        mu1 = np.mean(X1,axis=1)
+        cov1 = np.cov(X1)
+        mu2 = np.mean(X2,axis=1)
+        cov2 = np.cov(X2)
+
+        if nd > 1: 
+            inv2 = linalg.inv(cov2)  
+            kld = np.dot(mu1-mu2,np.dot(inv2,mu1-mu2))
+            kld += (np.trace(np.dot(cov1,inv2)) - nd - np.log(linalg.det(cov1)/(linalg.det(cov2)+1e-15)))
+        else:
+            kld = (mu1-mu2)**2/(cov2 + 1e-15)
+            kld += cov1/(cov2 + 1e-15) - 1 - np.log(cov1/(cov2 + 1e-15))
+
+        kld *= 0.5
+        
+        return kld
+    ###################
     
 #################################
 # (structure courtesy MIT-OLL MLIntro Course)
