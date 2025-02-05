@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import linalg
 from utilities import Utilities
 from mllib import MLUtilities
 from mlmodules import *
@@ -1882,6 +1883,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
             -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
             -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
+            -- 'val_frac': float < 1, fraction of data to be reserved for validation (default 0.2)
             -- 'mb_size': None or int >= 1, size of mini-batches. If None (default), will be set to int((X.shape[1]*(1-val_frac))/2) 
             -- 'check_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
         """
@@ -1889,6 +1891,7 @@ class GAN(Module,MLUtilities,Utilities):
         max_epoch_g = params.get('max_epoch_g',100)
         lrate_d = params.get('lrate_d',0.005)
         lrate_g = params.get('lrate_g',0.005)
+        val_frac = params.get('val_frac',0.2)
         mb_size = params.get('mb_size',None)
         check_after = params.get('check_after',10)
         
@@ -1900,20 +1903,20 @@ class GAN(Module,MLUtilities,Utilities):
         if d != self.n0:
             raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}, got {1:d}".format(self.n0,d))
 
-        # n_val = np.rint(val_frac*n_samp).astype(int)
-        # n_samp -= n_val        
+        n_val = np.rint(val_frac*n_samp).astype(int)
+        n_samp -= n_val        
 
-        # if n_val > 0:
-        #     ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
-        #     ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
-        # else:
-        #     ind_train = np.arange(X.shape[1])
+        if n_val > 0:
+            ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
+            ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
+        else:
+            ind_train = np.arange(X.shape[1])
 
-        # X_train = X[:,ind_train].copy()
-        X_train = X.copy()
+        X_train = X[:,ind_train].copy()
+        # X_train = X.copy()
 
-        # if n_val > 0:
-        #     X_val = X[:,ind_val].copy()
+        if n_val > 0:
+            X_val = X[:,ind_val].copy()
 
         if self.standardize:
             self.X_std = np.std(X,axis=1)
@@ -1928,15 +1931,15 @@ class GAN(Module,MLUtilities,Utilities):
             elif self.use_sigm:
                 # additional sigmoid standardization so that values in (0,1)
                 X_train = 1/(1+np.exp(-X_train))
-            # if n_val > 0:
-            #     X_val -= self.X_mean
-            #     X_val /= (self.X_std + 1e-15)
-            #     if self.use_tanh:
-            #         # additional tanh standardization so that values in (-1,1)
-            #         X_val = np.tanh(X_val)
-            #     elif self.use_sigm:
-            #         # additional sigmoid standardization so that values in (0,1)
-            #         X_val = 1/(1+np.exp(-X_val))
+            if n_val > 0:
+                X_val -= self.X_mean
+                X_val /= (self.X_std + 1e-15)
+                if self.use_tanh:
+                    # additional tanh standardization so that values in (-1,1)
+                    X_val = np.tanh(X_val)
+                elif self.use_sigm:
+                    # additional sigmoid standardization so that values in (0,1)
+                    X_val = 1/(1+np.exp(-X_val))
             
         if mb_size is None:
             if self.verbose:
@@ -2017,7 +2020,7 @@ class GAN(Module,MLUtilities,Utilities):
             # update activations and calculate G loss gradients for randoms mini-batch
             G = self.forward_g(random)
             D_Gz = self.forward_d(G)
-            Dprime_Gz = self.gradient_d(G) # (n0,1,b) # CAUGHT A BUG! .. had D_Gz instead of G!!
+            Dprime_Gz = self.gradient_d(G) # (n0,1,b) 
             if self.gan_type == 'minimax':
                 D_Gz = 1 - D_Gz
             elif self.gan_type == 'wasserstein':
@@ -2030,28 +2033,54 @@ class GAN(Module,MLUtilities,Utilities):
 
             # validation check
             # update activations. prediction for validation data
-            random = self.noise_prior(self.n0ran,X.shape[1]) # so noise changes in every validation step
+            D_x_val = self.forward_d(X_val)
+            random = self.noise_prior(self.n0ran,X_val.shape[1]) # so noise changes in every validation step
+            # random = self.noise_prior(self.n0ran,X.shape[1]) # so noise changes in every validation step
             G_val = self.forward_g(random)
             D_Gz_val = self.forward_d(G_val)
 
-            # calculate validation loss
-            if self.gan_type in ['minimax','wasserstein']:
-                gen_loss = self.loss.forward(D_Gz_val,np.zeros_like(D_Gz_val))
-            elif self.gan_type == 'modified':
-                gen_loss = self.loss.forward(D_Gz_val,np.ones_like(D_Gz_val))
+            # calculate validation loss (Frechet inception distance: https://arxiv.org/abs/1706.08500)
+            mu_X = np.mean(X_val,axis=1)
+            cov_X = np.cov(X_val)
+            mu_G = np.mean(G_val,axis=1)
+            cov_G = np.cov(G_val)
+            
+            gen_loss = np.sum((mu_X - mu_G)**2)
+            cov_dist = (np.trace(cov_X + cov_G - 2*linalg.sqrtm(np.dot(cov_X,cov_G))) if self.n0 > 1 else (cov_X + cov_G - 2*np.sqrt(cov_X*cov_G)))
+            gen_loss += cov_dist
+            self.gen_loss[t] = gen_loss
+
+            # # calculate validation loss (simplified Frechet inception distance)
+            # gen_loss = np.sum((np.mean(X_val,axis=1) - np.mean(G_val,axis=1))**2)
+            # gen_loss += np.sum((np.var(X_val,axis=1) - np.var(G_val,axis=1))**2)
+            # self.gen_loss[t] = gen_loss
+            
+            # # calculate validation loss (Wasserstein distance)
+            # self.gen_loss[t] = np.mean(D_x_val - D_Gz_val) 
+            
+            # # calculate validation loss
+            # if self.gan_type in ['minimax','wasserstein']:
+            #     gen_loss = self.loss.forward(D_Gz_val,np.zeros_like(D_Gz_val))
+            # elif self.gan_type == 'modified':
+            #     gen_loss = self.loss.forward(D_Gz_val,np.ones_like(D_Gz_val))
            
-            if (self.wt_decay_g > 0.0):
-                gen_loss += self.calc_loss_decay('g')
-            self.gen_loss[t] = gen_loss/X.shape[1]
+            # if (self.wt_decay_g > 0.0):
+            #     gen_loss += self.calc_loss_decay('g')
+            # self.gen_loss[t] = gen_loss/X.shape[1]
+            
+            # # calculate validation loss (multi-dim KS distance: https://doi.org/10.1016/j.spl.2021.109088)
+            # gen_loss = 0.0
+            # self.gen_loss[t] = gen_loss
 
             if t > check_after:
                 x = np.arange(t-check_after,t+1)
                 y = self.gen_loss[x].copy()
                 bf_slope = np.mean(x*y)-np.mean(x)*np.mean(y) # best fit slope
-                if self.gan_type == 'minimax':
-                    slope_cond = (bf_slope < 0.0) 
-                else:
-                    slope_cond = (bf_slope > 0.0) 
+                slope_cond = (bf_slope > 0.0) 
+                # if self.gan_type == 'minimax':
+                #     slope_cond = (bf_slope < 0.0) 
+                # else:
+                #     slope_cond = (bf_slope > 0.0) 
                 if slope_cond: # check for appropriate sign of best fit slope
                     if self.verbose:
                         self.print_this('',self.logfile)
