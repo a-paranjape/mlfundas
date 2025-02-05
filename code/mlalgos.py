@@ -1885,6 +1885,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
             -- 'val_frac': float < 1, fraction of data to be reserved for validation (default 0.2)
             -- 'mb_size': None or int >= 1, size of mini-batches. If None (default), will be set to int((X.shape[1]*(1-val_frac))/2) 
+            -- 'stop_criterion': string, one of ['fid' (Frechet inception distance),'klg' (Gaussianized KL divergence)]. Default 'fid' 
             -- 'check_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
         """
         max_epoch_d = params.get('max_epoch_d',1)
@@ -1893,6 +1894,7 @@ class GAN(Module,MLUtilities,Utilities):
         lrate_g = params.get('lrate_g',0.005)
         val_frac = params.get('val_frac',0.2)
         mb_size = params.get('mb_size',None)
+        stop_criterion = params.get('stop_criterion','fid')
         check_after = params.get('check_after',10)
         
         if self.verbose:
@@ -1902,6 +1904,11 @@ class GAN(Module,MLUtilities,Utilities):
 
         if d != self.n0:
             raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}, got {1:d}".format(self.n0,d))
+
+        if stop_criterion not in ['fid','klg']:
+            if self.verbose:
+                self.print_this("Unknown stop_criterion '"+str(stop_criterion)+"' detected in GAN.train() (expected ['fid','klg']). Setting to 'fid'.",self.logfile)
+            stop_criterion = 'fid'
 
         n_val = np.rint(val_frac*n_samp).astype(int)
         n_samp -= n_val        
@@ -2039,21 +2046,11 @@ class GAN(Module,MLUtilities,Utilities):
             G_val = self.forward_g(random)
             D_Gz_val = self.forward_d(G_val)
 
-            # calculate validation loss (Frechet inception distance: https://arxiv.org/abs/1706.08500)
-            mu_X = np.mean(X_val,axis=1)
-            cov_X = np.cov(X_val)
-            mu_G = np.mean(G_val,axis=1)
-            cov_G = np.cov(G_val)
-            
-            gen_loss = np.sum((mu_X - mu_G)**2)
-            cov_dist = (np.trace(cov_X + cov_G - 2*linalg.sqrtm(np.dot(cov_X,cov_G))) if self.n0 > 1 else (cov_X + cov_G - 2*np.sqrt(cov_X*cov_G)))
-            gen_loss += cov_dist
-            self.gen_loss[t] = gen_loss
-
-            # # calculate validation loss (simplified Frechet inception distance)
-            # gen_loss = np.sum((np.mean(X_val,axis=1) - np.mean(G_val,axis=1))**2)
-            # gen_loss += np.sum((np.var(X_val,axis=1) - np.var(G_val,axis=1))**2)
-            # self.gen_loss[t] = gen_loss
+            # calculate validation loss
+            stop_fun = self.FID
+            if stop_criterion == 'klg':
+                stop_fun = self.KLGauss
+            self.gen_loss[t] = stop_fun(G_val,X_val)
             
             # # calculate validation loss (Wasserstein distance)
             # self.gen_loss[t] = np.mean(D_x_val - D_Gz_val) 
