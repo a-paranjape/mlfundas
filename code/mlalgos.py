@@ -1978,6 +1978,7 @@ class GAN(Module,MLUtilities,Utilities):
         self.epochs = np.arange(max_epoch_g)+1.0
         self.gen_loss = np.zeros(max_epoch_g) # will only be calculated for validation noise input
         tk = 0
+        gen_loss_best = 1e30
         for t in range(max_epoch_g):
             ###########################
             # outer loop for training G
@@ -2069,7 +2070,11 @@ class GAN(Module,MLUtilities,Utilities):
                 gen_loss += self.nongauss_diff(G_val,X_val,mom=3)
                 gen_loss += self.nongauss_diff(G_val,X_val,mom=4)
             self.gen_loss[t] = gen_loss
-            
+
+            # save best network
+            if gen_loss < gen_loss_best:
+                self.save()
+                gen_loss_best = 1.0*gen_loss
             
             # # calculate validation loss (Wasserstein distance)
             # self.gen_loss[t] = np.mean(D_x_val - D_Gz_val) 
@@ -2078,15 +2083,10 @@ class GAN(Module,MLUtilities,Utilities):
             # if self.gan_type in ['minimax','wasserstein']:
             #     gen_loss = self.loss.forward(D_Gz_val,np.zeros_like(D_Gz_val))
             # elif self.gan_type == 'modified':
-            #     gen_loss = self.loss.forward(D_Gz_val,np.ones_like(D_Gz_val))
-           
+            #     gen_loss = self.loss.forward(D_Gz_val,np.ones_like(D_Gz_val))           
             # if (self.wt_decay_g > 0.0):
             #     gen_loss += self.calc_loss_decay('g')
             # self.gen_loss[t] = gen_loss/X.shape[1]
-            
-            # # calculate validation loss (multi-dim KS distance: https://doi.org/10.1016/j.spl.2021.109088)
-            # gen_loss = 0.0
-            # self.gen_loss[t] = gen_loss
 
             if t > check_after:
                 x = np.arange(t-check_after,t+1)
@@ -2107,6 +2107,11 @@ class GAN(Module,MLUtilities,Utilities):
             # end outer loop
             ###########################
 
+        # load best network
+        if self.verbose:
+            self.print_this("... loading best network",self.logfile)
+        self.load()
+        
         if self.reg_fun == 'drop':
             if self.verbose:
                 self.print_this("... correcting for drop regularization",self.logfile)
