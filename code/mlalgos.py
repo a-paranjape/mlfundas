@@ -419,6 +419,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.epochs = np.arange(max_epoch)+1.0
         self.epoch_loss = np.zeros(max_epoch)
         self.val_loss = np.zeros(max_epoch)
+        val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
@@ -440,6 +441,10 @@ class Sequential(Module,MLUtilities,Utilities):
                 # self.backward skips last activation, since loss.backward gives last dLdZ
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
+                
+            # always save first network
+            if t == 0:
+                self.save()
 
             # validation check
             if n_val > 0:
@@ -458,8 +463,20 @@ class Sequential(Module,MLUtilities,Utilities):
                             self.print_this('',self.logfile)
                         break
             
+
+            # save best network
+            if self.val_loss[t] < val_loss_best:
+                self.save()
+                val_loss_best = 1.0*self.val_loss[t]
+                
             if self.verbose:
                 self.status_bar(t,max_epoch)
+            ################################
+            
+        # load best network
+        if self.verbose:
+            self.print_this("... loading best network",self.logfile)
+        self.load()
 
         if self.reg_fun == 'drop':
             if self.verbose:
@@ -840,6 +857,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                                                 # record current best mean test loss
                                                 teststat = 1.0*ts_this
                                                 # save current best network (weights and setup + train dicts) to file
+                                                # ... prevent overwriting by subsequent Sequential.train calls
+                                                net.file_stem += '_bnn'
+                                                net.params['file_stem'] += '_bnn'
+                                                # ... save
                                                 net.save()
                                                 self.save_train(params_train)
 
@@ -857,18 +878,18 @@ class BuildNN(Module,MLUtilities,Utilities):
 
     def save_train(self,params_train):
         """ Save training params to file. """
-        with open(self.file_stem + '_train.pkl', 'wb') as f:
+        with open(self.file_stem + '_bnn_train.pkl', 'wb') as f:
             pickle.dump(params_train,f)
 
     def load_train(self):
         """ Load training params from file. """
-        with open(self.file_stem + '_train.pkl', 'rb') as f:
+        with open(self.file_stem + '_bnn_train.pkl', 'rb') as f:
             params_train = pickle.load(f)
         return params_train
 
     def load(self):
         """ Load existing network. """
-        with open(self.file_stem + '.pkl', 'rb') as f:
+        with open(self.file_stem + '_bnn.pkl', 'rb') as f:
             params_setup = pickle.load(f)
         net = Sequential(params=params_setup)
         net.load()
@@ -1214,6 +1235,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.epochs = np.arange(max_epoch)+1.0
         self.epoch_loss = np.zeros(max_epoch)
         self.val_loss = np.zeros(max_epoch)
+        val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
@@ -1255,9 +1277,20 @@ class BiSequential(Module,MLUtilities,Utilities):
                         if self.verbose:
                             self.print_this('',self.logfile)
                         break
+
+            # save best network
+            if self.val_loss[t] < val_loss_best:
+                self.save()
+                val_loss_best = 1.0*self.val_loss[t]
             
             if self.verbose:
                 self.status_bar(t,max_epoch)
+            ################################
+            
+        # load best network
+        if self.verbose:
+            self.print_this("... loading best network",self.logfile)
+        self.load()
 
         if self.reg_fun == 'drop':
             if self.verbose:
