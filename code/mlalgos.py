@@ -172,6 +172,8 @@ class Sequential(Module,MLUtilities,Utilities):
             ** Note that, ideally, last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
+            -- params['force_standard']: boolean, whether or not to force standardization (default False).
+                                         Useful when setting up classification networks for continuous output.
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['lrelu_slope']: float in (-1,1), slope of leaky ReLU if used (default 1e-2).
             -- params['wt_decay']: float, weight decay coefficient (should be non-negative; default 0.0)
@@ -202,6 +204,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.threshold = params.get('threshold',None)
         self.standardize = params.get('standardize',True)
         self.params['standardize'] = self.standardize # for consistency with self.save and self.load
+        self.force_standard = params.get('force_standard',False)
         self.adam = params.get('adam',True)
         self.lrelu_slope = params.get('lrelu_slope',1e-2)
         self.reg_fun = params.get('reg_fun','none')
@@ -293,7 +296,7 @@ class Sequential(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] or 'custom...' in Sequential().")
 
-        if self.standardize & (self.loss_type != 'square'):
+        if self.standardize & (self.loss_type != 'square') & (not self.force_standard):
             if self.verbose:
                 self.print_this('Warning!: Standardization incompatible with classification problems, switching off.',self.logfile)
             self.standardize = False
