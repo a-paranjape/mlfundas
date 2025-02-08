@@ -435,6 +435,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
+                batch_loss /= mb_size
                 if self.wt_decay > 0.0:
                     batch_loss += self.calc_loss_decay()
                 self.epoch_loss[t] += batch_loss
@@ -453,6 +454,9 @@ class Sequential(Module,MLUtilities,Utilities):
             if n_val > 0:
                 Ypred_val = self.forward(X_val) # update activations. prediction for validation data
                 self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
+                self.val_loss[t] /= n_val
+                if self.wt_decay > 0.0:
+                    self.val_loss[t] += self.calc_loss_decay()
                 if t > check_after:
                     x = np.arange(t-check_after,t+1)
                     y = self.val_loss[x].copy()
