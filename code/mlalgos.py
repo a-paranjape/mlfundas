@@ -1257,6 +1257,7 @@ class BiSequential(Module,MLUtilities,Utilities):
 
                 # loss calculation
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
+                batch_loss /= mb_size
                 if (self.wt_decay_a > 0.0) | (self.wt_decay_w > 0.0):
                     batch_loss += self.calc_loss_decay()
                 self.epoch_loss[t] += batch_loss
@@ -1277,6 +1278,7 @@ class BiSequential(Module,MLUtilities,Utilities):
                 # update activations. prediction for validation data
                 Ypred_val,apred_val,wpred_val = self.forward(X_val)
                 self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
+                self.val_loss[t] /= n_val
                 if t > check_after:
                     x = np.arange(t-check_after,t+1)
                     y = self.val_loss[x].copy()
