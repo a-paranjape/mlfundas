@@ -10,6 +10,7 @@ Modules implementing basic machine learning algorithms for classification and re
     * `Sequential` -- fully-connected feed-forward NN (subsets of this are logistic regression, support vector machine, ridge regression).
     * `BuildNN` -- wrapper to systematically search over various classes of NN architecture.
     * `BiSequential` -- architecture to approximate functions $f(x,\theta)$ using a separable basis of the form $f(x,\theta) \approx \sum_{i=1}^{n} b_i(x) w_i(\theta)$ 
+    * `GAN` -- generative adversarial network architecture using two Sequential networks, based on [Goodfellow+ (2014)](https://arxiv.org/abs/1406.2661) 
 * `mlseq`: sequential algorithms (state machines, recurrent NN, Markov decision process, ...). **UNDER CONSTRUCTION**
 * `utilities`: provides various utility modules for i/o and simple tools.
 
