@@ -18,6 +18,7 @@ This code arose from following the excellent course on [Introduction to Machine 
 
 ## Examples
 * $\texttt{examples/BiSequential.ipynb}$: Jupyter notebook showing example usage of existing `BiSequential` instance, based on [Paranjape & Sheth (2024)](https://arxiv.org/abs/2410.21374).
+* $\texttt{examples/GAN\\_Example.ipynb}$: Jupyter notebook showing example construction and usage of generative adversarial network using `GAN` instance.
 
 ## Contact
 Aseem Paranjape: aseem_at_iucaa_dot_in
