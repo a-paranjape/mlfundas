@@ -325,7 +325,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
         if (self.lrelu_slope <= -1.0) | (self.lrelu_slope >= 1.0):
             if self.verbose:
-                print("Warning!: lrelu_slope must be in range (-1,1) in GAN(). Setting to +1e-2.")
+                print("Warning!: lrelu_slope must be in range (-1,1) in Sequential(). Setting to +1e-2.")
             self.lrelu_slope = 1e-2
             
 
@@ -435,7 +435,6 @@ class Sequential(Module,MLUtilities,Utilities):
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
-                batch_loss /= mb_size
                 if self.wt_decay > 0.0:
                     batch_loss += self.calc_loss_decay()
                 self.epoch_loss[t] += batch_loss
@@ -446,6 +445,8 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
                 
+            self.epoch_loss[t] /= n_samp
+            
             # always save first network
             if t == 0:
                 self.save()
@@ -1257,7 +1258,6 @@ class BiSequential(Module,MLUtilities,Utilities):
 
                 # loss calculation
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
-                batch_loss /= mb_size
                 if (self.wt_decay_a > 0.0) | (self.wt_decay_w > 0.0):
                     batch_loss += self.calc_loss_decay()
                 self.epoch_loss[t] += batch_loss
@@ -1273,6 +1273,8 @@ class BiSequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate_a,lrate_w) # gradient descent update (will account for weight decay if requested)
 
+            self.epoch_loss[t] /= n_samp
+            
             # validation check
             if n_val > 0:
                 # update activations. prediction for validation data
