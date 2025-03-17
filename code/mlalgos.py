@@ -469,13 +469,15 @@ class Sequential(Module,MLUtilities,Utilities):
                     if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
                         if self.verbose:
                             self.print_this('',self.logfile)
-                        break
-            
+                        break            
 
-            # save best network
-            if self.val_loss[t] < val_loss_best:
+                # save best network
+                if self.val_loss[t] < val_loss_best:
+                    self.save()
+                    val_loss_best = 1.0*self.val_loss[t]
+            else:
+                # save each network if there's no validation data, so that last network is loaded eventually
                 self.save()
-                val_loss_best = 1.0*self.val_loss[t]
                 
             if self.verbose:
                 self.status_bar(t,max_epoch)
