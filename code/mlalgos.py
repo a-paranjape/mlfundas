@@ -598,7 +598,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.training_loss = loss_history['training_loss']
         self.val_loss = loss_history['val_loss']
         
-        return 
+        return loss_history 
     
     # to be called after generating/loading instance of Sequential() with correct setup params.
     def extract_basis(self):
