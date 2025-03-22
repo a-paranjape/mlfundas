@@ -5,6 +5,7 @@ from mllib import MLUtilities
 from mlmodules import *
 import copy
 import pickle
+from pathlib import Path
 
 #############################################
 class Perceptron(MLUtilities,Utilities):
@@ -40,7 +41,7 @@ class Perceptron(MLUtilities,Utilities):
         """
         T = params.get('T',10000000)
         self.epochs = np.arange(T)+1.0
-        self.epoch_loss = np.zeros_like(self.epochs)
+        self.training_loss = np.zeros_like(self.epochs)
         
         d,n = X.shape
         if Y.shape != (1,n):
@@ -72,7 +73,7 @@ class Perceptron(MLUtilities,Utilities):
                     else:
                         no_change = no_change + 1
                 if no_change == n: break
-                self.epoch_loss[t] = n - self.score(X,Y,self.W,self.W0)
+                self.training_loss[t] = n - self.score(X,Y,self.W,self.W0)
                 if self.verbose:
                     self.status_bar(t,T)
         else:
@@ -91,7 +92,7 @@ class Perceptron(MLUtilities,Utilities):
                         no_change = no_change + 1
                 if no_change == n: break
                 Ypred = self.predict(X)
-                self.epoch_loss[t] = n - self.score(Ypred,Y)
+                self.training_loss[t] = n - self.score(Ypred,Y)
                 if self.verbose:
                     self.status_bar(t,T)
         if self.verbose:
@@ -107,7 +108,7 @@ class Perceptron(MLUtilities,Utilities):
         """
         T = params.get('T',1000)
         self.epochs = np.arange(T)+1.0
-        self.epoch_loss = np.zeros_like(self.epochs)
+        self.training_loss = np.zeros_like(self.epochs)
         
         d,n = X.shape
         if Y.shape != (1,n):
@@ -138,7 +139,7 @@ class Perceptron(MLUtilities,Utilities):
             self.W = Ws/count
             self.W0 = W0s/count
             Ypred = self.predict(X)
-            self.epoch_loss[t] = n - self.score(Ypred,Y)
+            self.training_loss[t] = n - self.score(Ypred,Y)
             if self.verbose:
                 self.status_bar(t,T)
         return 
@@ -420,7 +421,7 @@ class Sequential(Module,MLUtilities,Utilities):
         mb_size = n_samp // mb_count
 
         self.epochs = np.arange(max_epoch)+1.0
-        self.epoch_loss = np.zeros(max_epoch)
+        self.training_loss = np.zeros(max_epoch)
         self.val_loss = np.zeros(max_epoch)
         val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
@@ -437,7 +438,7 @@ class Sequential(Module,MLUtilities,Utilities):
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
                 if self.wt_decay > 0.0:
                     batch_loss += self.calc_loss_decay()
-                self.epoch_loss[t] += batch_loss
+                self.training_loss[t] += batch_loss
                 dLdZ = self.loss.backward() # loss.backward returns last dLdZ not dLdA
 
                 self.backward(dLdZ) # update gradients
@@ -445,7 +446,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
                 
-            self.epoch_loss[t] /= n_samp
+            self.training_loss[t] /= n_samp
             
             # always save first network
             if t == 0:
@@ -483,6 +484,10 @@ class Sequential(Module,MLUtilities,Utilities):
                 self.status_bar(t,max_epoch)
             ################################
             
+        if self.verbose:
+            self.print_this("... saving training/validation loss history",self.logfile)
+        self.save_loss_history()
+        
         # load best network
         if self.verbose:
             self.print_this("... loading best network",self.logfile)
@@ -569,6 +574,32 @@ class Sequential(Module,MLUtilities,Utilities):
         
         return
 
+    def save_loss_history(self):
+        """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
+        
+        loss_history = {'epochs':self.epochs,'training_loss':self.training_loss,'val_loss':self.val_loss}
+        with open(self.file_stem + '_loss_history.pkl', 'wb') as f:
+            pickle.dump(loss_history,f)
+        
+        return
+        
+    def load_loss_history(self):
+        """ Load loss history from file."""
+        history_file = self.file_stem + '_loss_history.pkl'
+        if Path(history_file).is_file():
+            with open(history_file, 'rb') as f:
+                loss_history = pickle.load(f)
+        else:
+            if self.verbose:
+                self.print_this("... loss history doesn't exist, returning zeros",self.logfile)        
+            loss_history = {'epochs':np.zeros(1),'training_loss':np.zeros(1),'val_loss':np.zeros(1)}
+
+        self.epochs = loss_history['epochs']
+        self.training_loss = loss_history['training_loss']
+        self.val_loss = loss_history['val_loss']
+        
+        return 
+    
     # to be called after generating/loading instance of Sequential() with correct setup params.
     def extract_basis(self):
         """ Extract penultimate layer of NN as collection of basis functions. """
@@ -1243,7 +1274,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         mb_size = n_samp // mb_count
 
         self.epochs = np.arange(max_epoch)+1.0
-        self.epoch_loss = np.zeros(max_epoch)
+        self.training_loss = np.zeros(max_epoch)
         self.val_loss = np.zeros(max_epoch)
         val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
@@ -1262,7 +1293,7 @@ class BiSequential(Module,MLUtilities,Utilities):
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
                 if (self.wt_decay_a > 0.0) | (self.wt_decay_w > 0.0):
                     batch_loss += self.calc_loss_decay()
-                self.epoch_loss[t] += batch_loss
+                self.training_loss[t] += batch_loss
 
                 # back-propagation
                 dLdZ_last = self.loss.backward() # (1,b)
@@ -1275,7 +1306,7 @@ class BiSequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate_a,lrate_w) # gradient descent update (will account for weight decay if requested)
 
-            self.epoch_loss[t] /= n_samp
+            self.training_loss[t] /= n_samp
             
             # validation check
             if n_val > 0:
@@ -2447,7 +2478,7 @@ class GAN(Module,MLUtilities,Utilities):
     #     mb_size = n_samp // mb_count
 
     #     self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
-    #     self.epoch_loss = np.zeros(max_epoch_g*max_epoch_d)
+    #     self.training_loss = np.zeros(max_epoch_g*max_epoch_d)
     #     self.epochs = np.arange(max_epoch_g)+1.0
     #     self.val_loss = np.zeros(max_epoch_g)
     #     ind_shuff = np.arange(n_samp)
@@ -2478,7 +2509,7 @@ class GAN(Module,MLUtilities,Utilities):
     #                 batch_loss = self.loss.forward(D_x,D_Gz) # calculate current batch loss
     #                 if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
     #                     batch_loss += self.calc_loss_decay()
-    #                 self.epoch_loss[k + t*max_epoch_d] += batch_loss/mb_count
+    #                 self.training_loss[k + t*max_epoch_d] += batch_loss/mb_count
 
     #                 # back-propagation: update D gradients using ascent
     #                 self.backward_d(dLdZdd + dLdZdg) 
