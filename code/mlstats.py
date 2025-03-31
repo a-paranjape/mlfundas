@@ -5,6 +5,7 @@ from mllib import MLUtilities
 from mlmodules import Module
 
 from cobaya.likelihood import Likelihood
+from cobaya.theory import Theory
 
 ###############################################
 class Chi2(Module,MLUtilities):
@@ -92,6 +93,34 @@ class Chi2Like(Likelihood):
         model = self.provider.get_model()
         chi2 = self.loss.forward(model) # ensure model has shape (1,n_samp)
         return -0.5*chi2
+    #########################################
+
+#########################################
+
+   
+#########################################
+class PolyTheory(Theory):
+    X = None
+    #########################################
+    def initialize(self):
+        pass
+    #########################################
+
+    #########################################
+    def calculate(self,state, want_derived=False, **param_dict):
+        keys = list(param_dict.keys())
+        output = np.sum(np.array([param_dict[keys[i]]*self.X**i for i in range(len(keys))]),axis=0)
+        state['model'] = output
+    #########################################
+
+    #########################################
+    def get_model(self):
+        return self.current_state['model']
+    #########################################
+
+    #########################################
+    def get_allow_agnostic(self):
+        return True
     #########################################
 
 #########################################
