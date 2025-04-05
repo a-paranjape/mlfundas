@@ -2,6 +2,9 @@ import numpy as np
 from scipy import linalg
 from utilities import Utilities
 
+import multiprocessing as mp
+from time import sleep
+
 #############################################
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
@@ -133,7 +136,8 @@ class MLUtilities(object):
         """
         nd = X1.shape[0]
         if X2.shape[0] != nd:
-            raise Exception("Expecting equal first dimension of X1 and X2 in KLGauss(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+            raise Exception("Expecting equal first dimension of X1 and X2 in KLGauss(). Got d1 = {0:d}, d2 = {1:d}"
+                            .format(X1.shape[0],X2.shape[0]))
         
         mu1 = np.mean(X1,axis=1)
         cov1 = np.cov(X1)
@@ -162,7 +166,8 @@ class MLUtilities(object):
         """
         nd = X1.shape[0]
         if X2.shape[0] != nd:
-            raise Exception("Expecting equal first dimension of X1 and X2 in skew_diff(). Got d1 = {0:d}, d2 = {1:d}".format(X1.shape[0],X2.shape[0]))
+            raise Exception("Expecting equal first dimension of X1 and X2 in skew_diff(). Got d1 = {0:d}, d2 = {1:d}"
+                            .format(X1.shape[0],X2.shape[0]))
         
         mu1 = np.mean(X1,axis=1)
         ng1 = np.mean((X1 - mu1)**mom,axis=1)/(np.std(X1,axis=1)**mom + 1e-15)
@@ -174,6 +179,34 @@ class MLUtilities(object):
         return mom_diff
     ###################
 
+    ###################
+    def run_processes(self,tasks,targets,max_procs):
+        if len(tasks) != len(targets):
+            raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
+        
+        # following https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
+        active_processes = []
+        for r in range(len(tasks)):
+            task = tasks[r]
+            target = targets[r]
+            process = mp.Process(target=target,args=(task,))
+            process.start()
+
+            # Limit concurrent processes
+            while len(active_processes) >= max_proc:
+                for p in active_processes:
+                    if not p.is_alive():
+                        active_processes.remove(p)
+                sleep(1)
+
+        for p in active_processes:
+            p.join()
+            
+        return
+    ###################
+
+    
+#################################
     
     
 #################################
