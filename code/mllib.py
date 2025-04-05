@@ -182,7 +182,7 @@ class MLUtilities(object):
     ###################
     def run_processes(self,tasks,targets,max_procs):
         """ Run at most max_procs concurrent processes. Expect tasks to be list of tuples and targets to be list of
-            functions, of equal length.
+            functions, of equal length. 
         """
         if len(tasks) != len(targets):
             raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
@@ -194,6 +194,7 @@ class MLUtilities(object):
             target = targets[r]
             process = mp.Process(target=target,args=task)
             process.start()
+            active_processes.append(process)
 
             # Limit concurrent processes
             while len(active_processes) >= max_procs:
