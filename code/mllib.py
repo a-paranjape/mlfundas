@@ -193,7 +193,7 @@ class MLUtilities(object):
             process.start()
 
             # Limit concurrent processes
-            while len(active_processes) >= max_proc:
+            while len(active_processes) >= max_procs:
                 for p in active_processes:
                     if not p.is_alive():
                         active_processes.remove(p)
