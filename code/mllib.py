@@ -209,6 +209,35 @@ class MLUtilities(object):
         return
     ###################
 
+    ###################
+    def train_parallel(self,tasks,instances,max_procs):
+        """ Run at most max_procs concurrent processes for parallel training. 
+            Expect tasks to be list of tuples and instances to be list of Sequential instances, of equal length. 
+        """
+        if len(tasks) != len(instances):
+            raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
+        
+        # following https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
+        active_processes = []
+        for r in range(len(tasks)):
+            task = tasks[r]
+            net = instances[r]
+            process = mp.Process(target=net.train,args=task)
+            process.start()
+            active_processes.append(process)
+
+            # Limit concurrent processes
+            while len(active_processes) >= max_procs:
+                for p in active_processes:
+                    if not p.is_alive():
+                        active_processes.remove(p)
+                sleep(1)
+
+        for p in active_processes:
+            p.join()
+            
+        return
+    ###################
     
 #################################
     
