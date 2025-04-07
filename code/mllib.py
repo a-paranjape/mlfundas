@@ -183,6 +183,7 @@ class MLUtilities(object):
     def run_processes(self,tasks,targets,max_procs):
         """ Run at most max_procs concurrent processes. Expect tasks to be list of tuples and targets to be list of
             functions, of equal length. 
+            Only useful if targets are unbound functions. For parallel training with class instances, see self.train_parallel().
         """
         if len(tasks) != len(targets):
             raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
@@ -210,19 +211,28 @@ class MLUtilities(object):
     ###################
 
     ###################
-    def train_parallel(self,tasks,instances,max_procs):
+    def queue_train(self,r,X,Y,params,net,mdict):
+        """ Wrapper to execute Sequential.train on copy of Sequential instance and add the instance into a managed dictionary. """
+        net.train(X,Y,params)
+        mdict[r] = net
+    ###################    
+
+    ###################
+    def train_parallel(self,tasks,max_procs):
         """ Run at most max_procs concurrent processes for parallel training. 
-            Expect tasks to be list of tuples and instances to be list of Sequential instances, of equal length. 
+            -- tasks: list of tuples of form (X,Y,params,net) net is Sequential instance and X,Y,params are inputs to net.train(). 
+            -- max_procs: int, maximum number of concurrent processes.
+            Returns list of trained instances (order may be scrambled)
+            MAY BE GENERALIZABLE TO ARBITRARY CLASSES AND METHODS, NOT JUST Sequential.train
         """
-        if len(tasks) != len(instances):
-            raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
+        manager = mp.Manager()
+        mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
         
-        # following https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
+        # loop structure inspired by https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
         active_processes = []
         for r in range(len(tasks)):
             task = tasks[r]
-            net = instances[r]
-            process = mp.Process(target=net.train,args=task)
+            process = mp.Process(target=self.queue_train,args=(r+1,)+task+(mdict,)) # REPLACE self.queue_train with queuer of choice
             process.start()
             active_processes.append(process)
 
@@ -236,7 +246,7 @@ class MLUtilities(object):
         for p in active_processes:
             p.join()
             
-        return
+        return mdict
     ###################
     
 #################################
