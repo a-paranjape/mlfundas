@@ -179,51 +179,32 @@ class MLUtilities(object):
         return mom_diff
     ###################
 
-    ###################
-    def run_processes(self,tasks,targets,max_procs):
-        """ Run at most max_procs concurrent processes. Expect tasks to be list of tuples and targets to be list of
-            functions, of equal length. 
-            Only useful if targets are unbound functions. For parallel training with class instances, see self.train_parallel().
-        """
-        if len(tasks) != len(targets):
-            raise Exception('Unequal lengths found for tasks ({0:d}) and targets ({1:d})'.format(len(tasks),len(targets)))
-        
-        # following https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
-        active_processes = []
-        for r in range(len(tasks)):
-            task = tasks[r]
-            target = targets[r]
-            process = mp.Process(target=target,args=task)
-            process.start()
-            active_processes.append(process)
-
-            # Limit concurrent processes
-            while len(active_processes) >= max_procs:
-                for p in active_processes:
-                    if not p.is_alive():
-                        active_processes.remove(p)
-                sleep(1)
-
-        for p in active_processes:
-            p.join()
-            
-        return
-    ###################
+    # ###################
+    # # Example queuer
+    # ###################
+    # def queuer(self,r,X,Y,params,net,mdict):
+    #     """ Wrapper to execute Sequential.train on copy of Sequential instance and add the instance into a managed dictionary. """
+    #     net.train(X,Y,params)
+    #     mdict[r+1] = net
+    # ###################    
+    
 
     ###################
-    def queue_train(self,r,X,Y,params,net,mdict):
-        """ Wrapper to execute Sequential.train on copy of Sequential instance and add the instance into a managed dictionary. """
-        net.train(X,Y,params)
-        mdict[r] = net
-    ###################    
-
-    ###################
-    def train_parallel(self,tasks,max_procs):
-        """ Run at most max_procs concurrent processes for parallel training. 
-            -- tasks: list of tuples of form (X,Y,params,net) net is Sequential instance and X,Y,params are inputs to net.train(). 
+    def run_processes(self,tasks,queuer,max_procs):
+        """ General purpose routine to run at most max_procs concurrent processes. 
+            -- tasks: list of tuples of form 1. (arg1,..argn,method/instance)
+                          Case 1.: method is (un)bound function instance with call signature method(arg1,..,argn)
+                          Case 2.: instance is a class instance and queuer should internally define 
+                                   method = getattr(class_instance,some_method_name) having call signature method(arg1,..,argn)
+                          E.g.: in case 2 we might set tasks = (X,Y,params,net), where 
+                                net is a Sequential instance and X,Y,params are inputs to net.train(). 
+            -- queuer: target function with call signature (r,arg1,..,argn,method/instance,mdict)
+                       where r is the integer index of a process and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
+                       that can be used internally by the queuer to pass arbitrary data structures from a child to the parent process.
+                       If instance passed instead of method, queuer should internally use appropriate method of the instance.
             -- max_procs: int, maximum number of concurrent processes.
-            Returns list of trained instances (order may be scrambled)
-            MAY BE GENERALIZABLE TO ARBITRARY CLASSES AND METHODS, NOT JUST Sequential.train
+
+            Returns updated mdict.
         """
         manager = mp.Manager()
         mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
@@ -232,7 +213,7 @@ class MLUtilities(object):
         active_processes = []
         for r in range(len(tasks)):
             task = tasks[r]
-            process = mp.Process(target=self.queue_train,args=(r+1,)+task+(mdict,)) # REPLACE self.queue_train with queuer of choice
+            process = mp.Process(target=queuer,args=(r,)+task+(mdict,)) 
             process.start()
             active_processes.append(process)
 
