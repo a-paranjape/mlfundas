@@ -5,6 +5,9 @@ from utilities import Utilities
 import multiprocessing as mp
 from time import sleep
 
+import os,psutil
+from concurrent.futures import ProcessPoolExecutor
+
 #############################################
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
@@ -179,6 +182,7 @@ class MLUtilities(object):
         return mom_diff
     ###################
 
+    
     # ###################
     # # Example queuer
     # ###################
@@ -190,7 +194,7 @@ class MLUtilities(object):
     
 
     ###################
-    def run_processes(self,tasks,queuer,max_procs):
+    def run_processes_alt(self,tasks,queuer,max_procs):
         """ General purpose routine to run at most max_procs concurrent processes. 
             -- tasks: list of tuples of form 1. (arg1,..argn,method/instance)
                           Case 1.: method is (un)bound function instance with call signature method(arg1,..,argn)
@@ -199,7 +203,7 @@ class MLUtilities(object):
                           E.g.: in case 2 we might set tasks = (X,Y,params,net), where 
                                 net is a Sequential instance and X,Y,params are inputs to net.train(). 
             -- queuer: target function with call signature (r,arg1,..,argn,method/instance,mdict)
-                       where r is the integer index of a process and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
+                       where r is the integer index of a task and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
                        that can be used internally by the queuer to pass arbitrary data structures from a child to the parent process.
                        If instance passed instead of method, queuer should internally use appropriate method of the instance.
             -- max_procs: int, maximum number of concurrent processes.
@@ -209,14 +213,57 @@ class MLUtilities(object):
         manager = mp.Manager()
         mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
         
+        # futures = []
+        a = 0
+        ###################################
+        # context 'spawn' would access multiple processors. default is 'fork' which doesn't.
+        # can't use spawn however since ppe.submit apparently only accepts imported functions, not class instance methods or even functions defined within the script.
+        ###################################
+        # with ProcessPoolExecutor(max_workers=max_procs,max_tasks_per_child=None,mp_context=mp.get_context("spawn")) as ppe:
+        with ProcessPoolExecutor(max_workers=max_procs,max_tasks_per_child=None) as ppe:
+            for r in range(len(tasks)):
+                args = (r,)+tasks[r]+(mdict,)
+                future = ppe.submit(queuer,*args)
+
+                a += 1
+                if a == max_procs:
+                    a -= max_procs
+            
+        return mdict
+    ###################
+
+    
+    ###################
+    def run_processes(self,tasks,queuer,max_procs):
+        """ General purpose routine to run at most max_procs concurrent processes. 
+            -- tasks: list of tuples of form 1. (arg1,..argn,method/instance)
+                          Case 1.: method is (un)bound function instance with call signature method(arg1,..,argn)
+                          Case 2.: instance is a class instance and queuer should internally define 
+                                   method = getattr(class_instance,some_method_name) having call signature method(arg1,..,argn)
+                          E.g.: in case 2 we might set tasks = (X,Y,params,net), where 
+                                net is a Sequential instance and X,Y,params are inputs to net.train(). 
+            -- queuer: target function with call signature (r,arg1,..,argn,method/instance,mdict)
+                       where r is the integer index of a task and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
+                       that can be used internally by the queuer to pass arbitrary data structures from a child to the parent process.
+                       If instance passed instead of method, queuer should internally use appropriate method of the instance.
+            -- max_procs: int, maximum number of concurrent processes.
+
+            Returns updated mdict.
+        """
+        default_method = mp.get_start_method()
+        # mp.set_start_method("spawn",force=True)
+        
+        manager = mp.Manager()
+        mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
+        
         # loop structure inspired by https://github.com/SaptarshiSrkr/hypersearch/blob/main/hypersearch.py#L139
         active_processes = []
+        a = 0
         for r in range(len(tasks)):
-            task = tasks[r]
-            process = mp.Process(target=queuer,args=(r,)+task+(mdict,)) 
+            process = mp.Process(target=queuer,args=(r,)+tasks[r]+(mdict,))
             process.start()
             active_processes.append(process)
-
+            
             # Limit concurrent processes
             while len(active_processes) >= max_procs:
                 for p in active_processes:
@@ -224,9 +271,66 @@ class MLUtilities(object):
                         active_processes.remove(p)
                 sleep(1)
 
+            a += 1
+            if a == max_procs:
+                a -= max_procs
+
         for p in active_processes:
             p.join()
             
+        mp.set_start_method(default_method,force=True)
+        return mdict
+    ###################
+    
+
+    ###################
+    def run_processes_batch(self,tasks,queuer,max_procs):
+        """ General purpose routine to run at most max_procs concurrent processes. (ALTERNATE SCHEDULING.)
+            -- tasks: list of tuples of form 1. (arg1,..argn,method/instance)
+                          Case 1.: method is (un)bound function instance with call signature method(arg1,..,argn)
+                          Case 2.: instance is a class instance and queuer should internally define 
+                                   method = getattr(class_instance,some_method_name) having call signature method(arg1,..,argn)
+                          E.g.: in case 2 we might set tasks = (X,Y,params,net), where 
+                                net is a Sequential instance and X,Y,params are inputs to net.train(). 
+            -- queuer: target function with call signature (r,arg1,..,argn,method/instance,mdict)
+                       where r is the integer index of a task and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
+                       that can be used internally by the queuer to pass arbitrary data structures from a child to the parent process.
+                       If instance passed instead of method, queuer should internally use appropriate method of the instance.
+            -- max_procs: int, maximum number of concurrent processes.
+
+            Returns updated mdict.
+        """
+        manager = mp.Manager()
+        mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
+
+
+        ntasks = len(tasks)
+        if ntasks > max_procs:
+            n_concur = 1*max_procs
+            n_batches = ntasks // n_concur
+            n_tasks_last_batch = ntasks % n_concur
+            if n_tasks_last_batch > 0:
+                n_batches += 1
+        else:
+            n_concur = 1*ntasks
+            n_batches = 1
+            n_tasks_last_batch = n_concur
+
+        r = 0
+        for b in range(n_batches):
+            n_task_this_batch = n_tasks_last_batch if (b == n_batches-1) else n_concur
+            if n_task_this_batch > 0:
+                processes = []
+                for n in range(n_task_this_batch):
+                    task = tasks[r]
+                    process = mp.Process(target=queuer,args=(r,)+task+(mdict,))
+                    process.start()
+                    processes.append(process)
+                    r += 1
+                    
+                for p in processes:
+                    p.join()
+                
         return mdict
     ###################
     
