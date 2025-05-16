@@ -396,8 +396,8 @@ class Sequential(Module,MLUtilities,Utilities):
             Y_val = Y[:,ind_val].copy()
         
         if self.standardize:
-            self.Y_std = np.std(Y,axis=1)
-            self.Y_mean = np.mean(Y,axis=1)
+            self.Y_std = np.std(Y,axis=1,keepdims=True)
+            self.Y_mean = np.mean(Y,axis=1,keepdims=True)
             self.params['Y_std'] = self.Y_std
             self.params['Y_mean'] = self.Y_mean
             Y_train -= self.Y_mean
@@ -752,10 +752,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                 self.htypes = None
             good_htype = True
             for h in range(len(self.htypes)):
-                if self.htypes[h] not in ['tanh','relu']:
+                if self.htypes[h] not in ['tanh','relu','lrelu']:
                     good_htype = False
             if not good_htype:
-                print("Warning: htypes list should be subset of ['tanh','relu'] in BuildNN(). Setting htypes to None.")
+                print("Warning: htypes list should be subset of ['tanh','relu','lrelu'] in BuildNN(). Setting htypes to None.")
                 self.htypes = None
             
         return
@@ -1249,8 +1249,8 @@ class BiSequential(Module,MLUtilities,Utilities):
             Y_val = Y[:,ind_val].copy()
         
         if self.standardize:
-            self.Y_std = np.std(Y,axis=1)
-            self.Y_mean = np.mean(Y,axis=1)
+            self.Y_std = np.std(Y,axis=1,keepdims=True)
+            self.Y_mean = np.mean(Y,axis=1,keepdims=True)
             self.params['Y_std'] = self.Y_std
             self.params['Y_mean'] = self.Y_mean
             Y_train -= self.Y_mean
@@ -2015,8 +2015,8 @@ class GAN(Module,MLUtilities,Utilities):
             X_val = X[:,ind_val].copy()
 
         if self.standardize:
-            self.X_std = np.std(X,axis=1)
-            self.X_mean = np.mean(X,axis=1)
+            self.X_std = np.std(X,axis=1,keepdims=True)
+            self.X_mean = np.mean(X,axis=1,keepdims=True)
             self.params['X_std'] = self.X_std
             self.params['X_mean'] = self.X_mean
             X_train -= self.X_mean
