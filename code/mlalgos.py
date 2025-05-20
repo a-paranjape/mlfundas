@@ -649,7 +649,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=1e-2,loss_type='square',test_type='perc',htypes=None,
-                 neg_labels=True,arch_type=None,wt_decays=[0.0],
+                 neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,
                  seed=None,file_stem='net',verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
@@ -667,6 +667,8 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         # self.lrates will be reset by trainNN if lrates is None 
         self.lrates = lrates
+
+        self.check_after = check_after
 
         # None or list of floats
         self.thresholds = [None] if thresholds is None else thresholds
@@ -797,7 +799,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
                 'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac}
+        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after}
         
         if self.arch_type in [None,'no_reg']:
             reg_funs = ['none']
@@ -806,28 +808,24 @@ class BuildNN(Module,MLUtilities,Utilities):
             layers = np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([0.001,0.003,0.01,0.03,0.1]) 
-            ptrn['check_after'] = 100
         elif self.arch_type == 'emulator:deep':
             reg_funs = ['none']
             # interpret min_layer,max_layer as (min/max depth // 4)
             layers = 4*np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([1e-3,1e-4])
-            ptrn['check_after'] = 300
         elif self.arch_type == 'emulator:shallow':
             reg_funs = ['none']
             # interpret min_layer,max_layer as min/max depth
             layers = np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([1e-5,1e-4,1e-3])
-            ptrn['check_after'] = 300
         elif self.arch_type == 'autoenc':
             # interpret min_layer,max_layer as min/max depth, and max_ex_vals as basis sizes
             reg_funs = ['none']
             layers = np.arange(self.min_layer,self.max_layer+1)
             if self.lrates is None:
                 self.lrates = np.array([1e-4,3e-4,1e-3])
-            ptrn['check_after'] = 300
 
         if layers.max() == 1:
             hidden_atypes = [None]
@@ -881,8 +879,9 @@ class BuildNN(Module,MLUtilities,Utilities):
                                                     resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
                                                     resid = resid.flatten()
                                                     ts_this = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
-                                                else:
+                                                elif self.test_type == 'mse':
                                                     ts_this = np.sum((net_this.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
+                                                    ts_this = np.sqrt(ts_this)
                                             else:
                                                 ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
                                                 # this is fraction of predictions that are incorrect 
@@ -903,6 +902,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                                 net.params['file_stem'] += '_bnn'
                                                 # ... save
                                                 net.save()
+                                                net.save_loss_history()
                                                 self.save_train(params_train)
 
                                             if teststat <= self.target_test_stat:
@@ -934,6 +934,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             params_setup = pickle.load(f)
         net = Sequential(params=params_setup)
         net.load()
+        net.load_loss_history()
         return net
 #################################
 
