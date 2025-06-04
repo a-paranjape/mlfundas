@@ -447,7 +447,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
                 
-            self.training_loss[t] = batch_loss/n_samp + decay_loss/mb_count
+            self.training_loss[t] = (batch_loss + decay_loss)/n_samp
             
             # always save first network
             if t == 0:
@@ -456,9 +456,10 @@ class Sequential(Module,MLUtilities,Utilities):
             # validation check
             if n_val > 0:
                 Ypred_val = self.forward(X_val) # update activations. prediction for validation data
-                self.val_loss[t] = self.loss.forward(Ypred_val,Y_val)/n_val # calculate validation loss, update self.loss
+                self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
                 if self.wt_decay > 0.0:
                     self.val_loss[t] += self.calc_loss_decay()
+                self.val_loss[t] /= n_val
                 if t > check_after:
                     x = np.arange(t-check_after,t+1)
                     y = self.val_loss[x].copy()
