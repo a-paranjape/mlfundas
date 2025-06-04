@@ -437,7 +437,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
                 if self.wt_decay > 0.0:
-                    batch_loss += self.calc_loss_decay()
+                    batch_loss += self.calc_loss_decay()*n_samp # will be divided by n_samp later
                 self.training_loss[t] += batch_loss
                 dLdZ = self.loss.backward() # loss.backward returns last dLdZ not dLdA
 
