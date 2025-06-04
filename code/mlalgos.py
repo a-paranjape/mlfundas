@@ -429,16 +429,17 @@ class Sequential(Module,MLUtilities,Utilities):
             self.rng.shuffle(ind_shuff)
             X_train_shuff = X_train[:,ind_shuff].copy()
             Y_train_shuff = Y_train[:,ind_shuff].copy()
+            batch_loss = 0.0
+            decay_loss = 0.0
             for b in range(mb_count):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
                 data,target = X_train_shuff[:,sl].copy(),Y_train_shuff[:,sl].copy()
 
                 Ypred = self.forward(data) # update activations. prediction for mini-batch
 
-                batch_loss = self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
+                batch_loss += self.loss.forward(Ypred,target) # calculate current batch loss, update self.loss
                 if self.wt_decay > 0.0:
-                    batch_loss += self.calc_loss_decay()*n_samp # will be divided by n_samp later
-                self.training_loss[t] += batch_loss
+                    decay_loss += self.calc_loss_decay()
                 dLdZ = self.loss.backward() # loss.backward returns last dLdZ not dLdA
 
                 self.backward(dLdZ) # update gradients
@@ -446,7 +447,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
                 
-            self.training_loss[t] /= n_samp
+            self.training_loss[t] = batch_loss/n_samp + decay_loss/mb_count
             
             # always save first network
             if t == 0:
@@ -455,8 +456,7 @@ class Sequential(Module,MLUtilities,Utilities):
             # validation check
             if n_val > 0:
                 Ypred_val = self.forward(X_val) # update activations. prediction for validation data
-                self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
-                self.val_loss[t] /= n_val
+                self.val_loss[t] = self.loss.forward(Ypred_val,Y_val)/n_val # calculate validation loss, update self.loss
                 if self.wt_decay > 0.0:
                     self.val_loss[t] += self.calc_loss_decay()
                 if t > check_after:
