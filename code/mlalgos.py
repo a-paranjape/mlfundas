@@ -975,6 +975,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 cnt += 1
 
             del all_nets
+            shutil.rmtree(self.file_stem+'/')
             gc.collect()
             
             if self.verbose:
