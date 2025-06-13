@@ -1132,7 +1132,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         if self.net_type == 'reg':
             for r in range(len(self.keys)):
                 predictions[r] = self.ensemble[self.keys[r]]['net'].predict(X)
-            Ypred = np.sum(self.weights*predictions,axis=0)
+            Ypred = np.sum(self.weights*predictions.T,axis=-1).T
         else:
             for r in range(len(self.keys)):
                 net = copy.deepcopy(self.ensemble[self.keys[r]]['net'])
