@@ -1029,12 +1029,17 @@ class BuildNN(Module,MLUtilities,Utilities):
 
     #############################
     def load(self):
-        """ Load existing network. """
-        with open(self.file_stem + '.pkl', 'rb') as f:
-            params_setup = pickle.load(f)
-        net = Sequential(params=params_setup)
-        net.load()
-        net.load_loss_history()
+        """ Load existing network / ensemble. """
+        if self.ensemble:
+            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,verbose=self.verbose,logfile=self.logfile)
+            neo.load()
+            return neo
+        else:
+            with open(self.file_stem + '.pkl', 'rb') as f:
+                params_setup = pickle.load(f)
+            net = Sequential(params=params_setup)
+            net.load()
+            net.load_loss_history()
         return net
     #############################
 #################################
