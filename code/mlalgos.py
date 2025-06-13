@@ -1041,7 +1041,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             net.load()
             net.load_loss_history()
 
-        if Path(self.file_stem+'/').is_dir():
+        if Path(self.file_stem).is_dir():
             shutil.rmtree(self.file_stem+'/')
         return net
     #############################
