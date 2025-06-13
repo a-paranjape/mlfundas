@@ -1062,6 +1062,8 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             raise Exception(self.ensemble_dir + ' is not a valid path for a NetworkEnsembleObject')
 
         self.ensemble = {} # will be updated by self.load as dictionary of Sequential instances and their teststats and training params.
+        if self.verbose:
+            self.print_this("NetworkEnsembleObject initialized",self.logfile)
 
     def load(self):
         if self.verbose:
