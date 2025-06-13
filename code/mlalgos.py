@@ -952,11 +952,11 @@ class BuildNN(Module,MLUtilities,Utilities):
             if self.verbose:
                 self.print_this("... storing best {0:d} of {1:d} networks in ensemble".format(ensemble_size,tsvals.size),self.logfile)
                 
-            cnt = 0
+            # cnt = 0
             for s in sorter:
                 net_dict = copy.deepcopy(all_nets[s])
                 net = copy.deepcopy(net_dict['net'])
-                net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
+                net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(s)#(cnt)
                 net.params['file_stem'] = net.file_stem
                 net.save()
                 net.save_loss_history()
@@ -972,7 +972,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 
                 net_dict = None
                 net = None
-                cnt += 1
+                # cnt += 1
 
             del all_nets
             shutil.rmtree(self.file_stem+'/')
@@ -1070,7 +1070,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
     def load(self):
         if self.verbose:
             self.print_this("... ... initializing dict self.ensemble",self.logfile)
-        for path in Path(self.ensemble_dir).glob("*.pkl"):
+        for path in Path(self.ensemble_dir).glob("*.pkl"): # NEED TO SORT GLOB
             path_str = str(path)
             if path_str[-10:-4] == '_train':
                 self.ensemble[path_str[:-10]] = {'net':None,'ptrain':None,'teststat':None}
@@ -1124,7 +1124,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         self.weights /= self.weights.sum()
                 
         if self.verbose:
-            self.print_this("... ... ensemble loaded and checked",self.logfile)
+            self.print_this("... ensemble loaded and checked",self.logfile)
             
         return
 
