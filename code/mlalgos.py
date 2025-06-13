@@ -1131,11 +1131,11 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         predictions = np.zeros((len(self.keys),self.nlast,X.shape[1]))
         if self.net_type == 'reg':
             for r in range(len(self.keys)):
-                predictions[r] = self.ensemble[keys[r]]['net'].predict(X)
+                predictions[r] = self.ensemble[self.keys[r]]['net'].predict(X)
             Ypred = np.sum(self.weights*predictions,axis=0)
         else:
             for r in range(len(self.keys)):
-                net = copy.deepcopy(self.ensemble[keys[r]]['net'])
+                net = copy.deepcopy(self.ensemble[self.keys[r]]['net'])
                 net.net_type = 'reg'
                 net.modules[-1].net_type = 'reg'
                 # force last module to return non-negative probabilities rather than labels
