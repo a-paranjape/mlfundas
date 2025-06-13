@@ -1030,6 +1030,8 @@ class BuildNN(Module,MLUtilities,Utilities):
     #############################
     def load(self):
         """ Load existing network / ensemble. """
+        if Path(self.file_stem).is_dir():
+            shutil.rmtree(self.file_stem+'/')
         if self.ensemble:
             neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,verbose=self.verbose,logfile=self.logfile)
             neo.load()
@@ -1040,10 +1042,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             net = Sequential(params=params_setup)
             net.load()
             net.load_loss_history()
-
-        if Path(self.file_stem).is_dir():
-            shutil.rmtree(self.file_stem+'/')
-        return net
+            return net
     #############################
 #################################
 
