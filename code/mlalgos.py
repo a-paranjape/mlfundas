@@ -3,8 +3,7 @@ from scipy import linalg
 from utilities import Utilities
 from mllib import MLUtilities
 from mlmodules import *
-import copy
-import pickle
+import copy,pickle,shutil,gc
 from pathlib import Path
 
 #############################################
@@ -647,11 +646,13 @@ class Sequential(Module,MLUtilities,Utilities):
 #################
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
+    #############################
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
-                 target_test_stat=1e-2,loss_type='square',test_type='perc',htypes=None,
+                 target_test_stat=None,loss_type='square',test_type='perc',htypes=None,
                  neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,
-                 seed=None,file_stem='net',verbose=True,logfile=None):
+                 seed=None,file_stem='net',ensemble=False,parallel=False,nproc=4,
+                 verbose=True,logfile=None):
         Utilities.__init__(self)
         self.X = X
         self.Y = Y
@@ -662,6 +663,11 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.test_type = test_type # type of test for hyperparam search: either 'perc' (residual percentiles) or 'mse' (mean squared error)
         self.htypes = htypes # None or list of strings. Control which hidden layer activations to search over
 
+        self.parallel = parallel
+        self.nproc = nproc if self.parallel else 1
+        
+        self.ensemble = ensemble # if True, ensemble over top 10% of n_iter*(arch+hyperparam) choices, else only record best.
+        
         # min/max no. of layers (i.e. network depth)
         self.min_layer = min_layer 
         self.max_layer = max_layer
@@ -679,7 +685,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.max_ex = max_ex 
         self.max_ex_vals = np.arange(max_ex+1) if np.isscalar(max_ex) else self.max_ex
         
-        self.target_test_stat = target_test_stat
+        self.target_test_stat = target_test_stat # deprecated and not used
         self.loss_type = loss_type
         self.neg_labels = neg_labels # in case of classification, are labels {-1,1} (True) or {0,1} (False)
         self.arch_type = arch_type # if not None, string describing architecture type to explore.
@@ -687,6 +693,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.wt_decays = wt_decays
         self.seed = seed
         self.file_stem = file_stem
+        Path(self.file_stem).mkdir(parents=True,exist_ok=True) # folder to store temporary networks
         self.verbose = verbose
         self.logfile = logfile
 
@@ -716,7 +723,9 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         if self.verbose:
             self.print_this("... setup complete",self.logfile)
+    #############################
 
+    #############################
     def check_input(self):
         """ Utility to check input for BuildNN(). """
         if (self.X is None) | (self.Y is None):
@@ -760,22 +769,71 @@ class BuildNN(Module,MLUtilities,Utilities):
             if not good_htype:
                 print("Warning: htypes list should be subset of ['tanh','relu','lrelu'] in BuildNN(). Setting htypes to None.")
                 self.htypes = None
+
+        if self.target_test_stat is not None:
+            print("Warning: kwarg target_test_stat is deprecated and will not be used.")
             
         return
+    #############################
 
+    #############################
     def gen_train(self):
         """ Convenience function to be able to repeatedly split input data into training and test samples. """
-        self.ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
-        self.ind_test = np.delete(np.arange(self.n_samp),self.ind_train) # Note ind_test is ordered although ind_train is randomised
+        ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
+        ind_test = np.delete(np.arange(self.n_samp),ind_train) # Note ind_test is ordered although ind_train is randomised
 
-        self.X_train = self.X[:,self.ind_train].copy()
-        self.Y_train = self.Y[:,self.ind_train].copy()
+        X_train = self.X[:,ind_train].copy()
+        Y_train = self.Y[:,ind_train].copy()
 
-        self.X_test = self.X[:,self.ind_test].copy()
-        self.Y_test = self.Y[:,self.ind_test].copy()
+        X_test = self.X[:,ind_test].copy()
+        Y_test = self.Y[:,ind_test].copy()
 
+        del ind_train,ind_test
+
+        return X_train,Y_train,X_test,Y_test
+    #############################
+
+    #############################
+    def queue_train(self,r,X_train,Y_train,X_test,Y_test,pset,ptrn,cnt_max,mdict):
+        """ Convenience function for use with MLUtilities.run_processes(). Expect r >= 0."""
+        
+        pset['file_stem'] = pset['file_stem'] + '_r{0:d}'.format(r)
+        
+        net = Sequential(params=pset)
+        net.train(X_train,Y_train,params=ptrn)
+
+        if net.net_type == 'reg':
+            if self.test_type == 'perc':
+                resid = net.predict(X_test)/(Y_test + 1e-15) - 1.0
+                resid = resid.flatten()
+                ts = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
+            elif self.test_type == 'mse':
+                ts = np.sum((net.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15)
+                ts = np.sqrt(ts)
+        else:
+            ts = np.where(net.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
+            # this is fraction of predictions that are incorrect
+            
+        if not np.isfinite(ts):
+            ts = 1e30
+            
+        # save this network (weights and setup dict) to file
+        # net = copy.deepcopy(net)
+        # params_setup = copy.deepcopy(pset)
+        # params_setup['verbose'] = self.verbose
+        # net.verbose = self.verbose
+        net.save()
+        net.save_loss_history()
+        
+        mdict[r] = {'net':net,'teststat':ts,'ptrain':ptrn}
+        
+        if self.verbose:
+            self.status_bar(r,cnt_max)
+            
         return
+    #############################
 
+    #############################
     def trainNN(self):
         """ Train various networks and select the one that minimizes test loss.
             Returns: 
@@ -799,7 +857,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         max_epoch = 1000000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
-                'file_stem':self.file_stem,'verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
+                'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after}
         
         if self.arch_type in [None,'no_reg']:
@@ -845,13 +903,16 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)
         cnt_max *= len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes)*len(self.thresholds)
-        cnt = 0
-        ts_this = 1e30
-        teststat = 1e25
+        # cnt = 0
+        # ts_this = 1e30
+        # teststat = 1e25
+        
         if self.verbose:
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
                             .format(self.n_iter,cnt_max//self.n_iter),self.logfile)
-        # compare_Y = self.rv(np.ones(self.n_test))
+            self.print_this("... setting tasks",self.logfile)
+            
+        tasks = []
         for ll in range(layers.size):
             L = layers[ll]
             pset['L'] = L
@@ -872,71 +933,115 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     for threshold in self.thresholds:
                                         pset['threshold'] = threshold
                                         for it in range(self.n_iter):
-                                            self.gen_train() # sample training+test data
-                                            net_this = Sequential(params=pset)
-                                            net_this.train(self.X_train,self.Y_train,params=ptrn)
-                                            if net_this.net_type == 'reg':
-                                                if self.test_type == 'perc':
-                                                    resid = net_this.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
-                                                    resid = resid.flatten()
-                                                    ts_this = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
-                                                elif self.test_type == 'mse':
-                                                    ts_this = np.sum((net_this.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
-                                                    ts_this = np.sqrt(ts_this)
-                                            else:
-                                                ts_this = np.where(net_this.predict(self.X_test) != self.Y_test)[0].size/self.Y_test.shape[1]
-                                                # this is fraction of predictions that are incorrect 
-                                            if not np.isfinite(ts_this):
-                                                ts_this = 1e30
-                                            if ts_this < teststat:
-                                                # store the current best network
-                                                net = copy.deepcopy(net_this)
-                                                params_setup = copy.deepcopy(pset)
-                                                params_setup['verbose'] = self.verbose
-                                                net.verbose = self.verbose
-                                                params_train = copy.deepcopy(ptrn)
-                                                # record current best mean test loss
-                                                teststat = 1.0*ts_this
-                                                # save current best network (weights and setup + train dicts) to file
-                                                # ... prevent overwriting by subsequent Sequential.train calls
-                                                net.file_stem += '_bnn'
-                                                net.params['file_stem'] += '_bnn'
-                                                # ... save
-                                                net.save()
-                                                net.save_loss_history()
-                                                self.save_train(params_train)
+                                            X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
+                                            tasks.append((X_train,Y_train,X_test,Y_test,pset,ptrn,cnt_max))
+                                            # net_this = Sequential(params=pset)
+                                            # net_this.train(X_train,Y_train,params=ptrn)
+                                            # if net_this.net_type == 'reg':
+                                            #     if self.test_type == 'perc':
+                                            #         resid = net_this.predict(X_test)/(Y_test + 1e-15) - 1.0
+                                            #         resid = resid.flatten()
+                                            #         ts_this = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
+                                            #     elif self.test_type == 'mse':
+                                            #         ts_this = np.sum((net_this.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15)
+                                            #         ts_this = np.sqrt(ts_this)
+                                            # else:
+                                            #     ts_this = np.where(net_this.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
+                                            #     # this is fraction of predictions that are incorrect 
+                                            # if not np.isfinite(ts_this):
+                                            #     ts_this = 1e30
+                                            # if ts_this < teststat:
+                                            #     # store the current best network
+                                            #     net = copy.deepcopy(net_this)
+                                            #     params_setup = copy.deepcopy(pset)
+                                            #     params_setup['verbose'] = self.verbose
+                                            #     net.verbose = self.verbose
+                                            #     params_train = copy.deepcopy(ptrn)
+                                            #     # record current best mean test loss
+                                            #     teststat = 1.0*ts_this
+                                            #     # save current best network (weights and setup + train dicts) to file
+                                            #     # ... prevent overwriting by subsequent Sequential.train calls
+                                            #     net.file_stem = self.file_stem
+                                            #     net.params['file_stem'] = self.file_stem
+                                            #     # ... save
+                                            #     net.save()
+                                            #     net.save_loss_history()
+                                            #     self.save_train(params_train)
 
-                                            if teststat <= self.target_test_stat:
-                                                if self.verbose:
-                                                    self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                                return net,params_train,teststat
+                                            # if teststat <= self.target_test_stat:
+                                            #     if self.verbose:
+                                            #         self.print_this("\n... achieved target test loss; breaking out",self.logfile)
+                                            #     return net,params_train,teststat
 
-                                            if self.verbose:
-                                                self.status_bar(cnt,cnt_max)
-                                            cnt += 1
+                                            # if self.verbose:
+                                            #     self.status_bar(cnt,cnt_max)
+                                            # cnt += 1
 
+        # train networks
+        if len(tasks) != cnt_max:
+            raise Exception("Mismatched length of tasks and cnt_max.")
+        if self.verbose:
+            self.print_this("... training using {0:d} process(es)".format(self.nproc),self.logfile)
+        all_nets = self.run_processes(tasks,self.queue_train,self.nproc)
+
+        del tasks
+        
+        if self.ensemble:
+            print("Ensembling not yet implemented. Returning best network.")
+
+        if self.verbose:
+            self.print_this("\n... identifying and saving best network and its teststat and training params",self.logfile)
+        tsvals = np.array([all_nets[r]['teststat'] for r in range(cnt_max)])
+        ind_best = np.argmin(tsvals)
+        best_net = copy.deepcopy(all_nets[ind_best])
+        net = copy.deepcopy(best_net['net'])
+        net.file_stem = self.file_stem
+        net.params['file_stem'] = self.file_stem
+        net.save()
+        net.save_loss_history()
+
+        del all_nets
+        shutil.rmtree(self.file_stem+'/')
+        
+        del best_net['net']
+        # now best_net = {'teststat':value,'ptrain':dict} for best network
+        self.save_train(best_net)
+        params_train = best_net['ptrain']
+        teststat = best_net['teststat']
+
+        gc.collect()
+        
         # return last stored network, training params and residual test statistic
         return net,params_train,teststat
+    #############################
 
-    def save_train(self,params_train):
-        """ Save training params to file. """
-        with open(self.file_stem + '_bnn_train.pkl', 'wb') as f:
-            pickle.dump(params_train,f)
+    #############################
+    def save_train(self,best_net):
+        """ Save training params and best test stat to file. """
+        with open(self.file_stem + '_train.pkl', 'wb') as f:
+            pickle.dump(best_net,f)
+    #############################
 
+    #############################
     def load_train(self):
         """ Load training params from file. """
-        with open(self.file_stem + '_bnn_train.pkl', 'rb') as f:
-            params_train = pickle.load(f)
-        return params_train
+        with open(self.file_stem + '_train.pkl', 'rb') as f:
+            best_net = pickle.load(f)
+            params_train = best_net['ptrain']
+            teststat = best_net['ts']
+        return params_train,teststat
+    #############################
 
+    #############################
     def load(self):
         """ Load existing network. """
-        with open(self.file_stem + '_bnn.pkl', 'rb') as f:
+        with open(self.file_stem + '.pkl', 'rb') as f:
             params_setup = pickle.load(f)
         net = Sequential(params=params_setup)
         net.load()
         net.load_loss_history()
         return net
+    #############################
 #################################
 
 
