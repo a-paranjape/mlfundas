@@ -692,8 +692,11 @@ class BuildNN(Module,MLUtilities,Utilities):
                                    # currently accepts ['emulator:deep','emulator:shallow','no_reg','autoenc']
         self.wt_decays = wt_decays
         self.seed = seed
-        self.file_stem = file_stem
+        self.file_stem = file_stem+'/net'
         Path(self.file_stem).mkdir(parents=True,exist_ok=True) # folder to store temporary networks
+        if self.ensemble:
+            self.file_stem_ensemble = file_stem+'/ensemble'
+            Path(self.file_stem_ensemble).mkdir(parents=True,exist_ok=True) # folder to store network ensemble members
         self.verbose = verbose
         self.logfile = logfile
 
@@ -817,12 +820,14 @@ class BuildNN(Module,MLUtilities,Utilities):
         if not np.isfinite(ts):
             ts = 1e30
             
-        # save this network (weights and setup dict) to file
-        # net = copy.deepcopy(net)
-        # params_setup = copy.deepcopy(pset)
-        # params_setup['verbose'] = self.verbose
-        # net.verbose = self.verbose
+        # save this network (weights, setup dict and loss history) to file
         net.save()
+        imax_trn = np.where(net.training_loss > 0.0)[0][-1]
+        imax_val = np.where(net.val_loss > 0.0)[0][-1]
+        imax = np.max([imax_trn,imax_val]) + 1
+        net.epochs = net.epochs[:imax]
+        net.training_loss = net.training_loss[:imax]
+        net.val_loss = net.val_loss[:imax]
         net.save_loss_history()
         
         mdict[r] = {'net':net,'teststat':ts,'ptrain':ptrn}
@@ -897,15 +902,8 @@ class BuildNN(Module,MLUtilities,Utilities):
             else:
                 hidden_atypes = self.htypes
 
-        net = None
-        params_setup = None
-        params_train = None
-
         cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)
         cnt_max *= len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes)*len(self.thresholds)
-        # cnt = 0
-        # ts_this = 1e30
-        # teststat = 1e25
         
         if self.verbose:
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
@@ -935,47 +933,6 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         for it in range(self.n_iter):
                                             X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
                                             tasks.append((X_train,Y_train,X_test,Y_test,pset,ptrn,cnt_max))
-                                            # net_this = Sequential(params=pset)
-                                            # net_this.train(X_train,Y_train,params=ptrn)
-                                            # if net_this.net_type == 'reg':
-                                            #     if self.test_type == 'perc':
-                                            #         resid = net_this.predict(X_test)/(Y_test + 1e-15) - 1.0
-                                            #         resid = resid.flatten()
-                                            #         ts_this = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
-                                            #     elif self.test_type == 'mse':
-                                            #         ts_this = np.sum((net_this.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15)
-                                            #         ts_this = np.sqrt(ts_this)
-                                            # else:
-                                            #     ts_this = np.where(net_this.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
-                                            #     # this is fraction of predictions that are incorrect 
-                                            # if not np.isfinite(ts_this):
-                                            #     ts_this = 1e30
-                                            # if ts_this < teststat:
-                                            #     # store the current best network
-                                            #     net = copy.deepcopy(net_this)
-                                            #     params_setup = copy.deepcopy(pset)
-                                            #     params_setup['verbose'] = self.verbose
-                                            #     net.verbose = self.verbose
-                                            #     params_train = copy.deepcopy(ptrn)
-                                            #     # record current best mean test loss
-                                            #     teststat = 1.0*ts_this
-                                            #     # save current best network (weights and setup + train dicts) to file
-                                            #     # ... prevent overwriting by subsequent Sequential.train calls
-                                            #     net.file_stem = self.file_stem
-                                            #     net.params['file_stem'] = self.file_stem
-                                            #     # ... save
-                                            #     net.save()
-                                            #     net.save_loss_history()
-                                            #     self.save_train(params_train)
-
-                                            # if teststat <= self.target_test_stat:
-                                            #     if self.verbose:
-                                            #         self.print_this("\n... achieved target test loss; breaking out",self.logfile)
-                                            #     return net,params_train,teststat
-
-                                            # if self.verbose:
-                                            #     self.status_bar(cnt,cnt_max)
-                                            # cnt += 1
 
         # train networks
         if len(tasks) != cnt_max:
@@ -986,40 +943,77 @@ class BuildNN(Module,MLUtilities,Utilities):
 
         del tasks
         
-        if self.ensemble:
-            print("Ensembling not yet implemented. Returning best network.")
-
-        if self.verbose:
-            self.print_this("\n... identifying and saving best network and its teststat and training params",self.logfile)
         tsvals = np.array([all_nets[r]['teststat'] for r in range(cnt_max)])
-        ind_best = np.argmin(tsvals)
-        best_net = copy.deepcopy(all_nets[ind_best])
-        net = copy.deepcopy(best_net['net'])
-        net.file_stem = self.file_stem
-        net.params['file_stem'] = self.file_stem
-        net.save()
-        net.save_loss_history()
-
-        del all_nets
-        shutil.rmtree(self.file_stem+'/')
         
-        del best_net['net']
-        # now best_net = {'teststat':value,'ptrain':dict} for best network
-        self.save_train(best_net)
-        params_train = best_net['ptrain']
-        teststat = best_net['teststat']
+        if self.ensemble:
+            sorter = np.argsort(tsvals)
+            ensemble_size = np.max([2,tsvals.size // 10]) if tsvals.size > 2 else 1
+            sorter = sorter[:ensemble_size] # select best 10% (if possible) of searched networks
+            if self.verbose:
+                self.print_this("... storing best {0:d} of {1:d} networks in ensemble".format(ensemble_size,tsvals.size),self.logfile)
+                
+            cnt = 0
+            for s in sorter:
+                net_dict = copy.deepcopy(all_nets[s])
+                net = copy.deepcopy(net_dict['net'])
+                net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
+                net.params['file_stem'] = net.file_stem
+                net.save()
+                net.save_loss_history()
 
-        gc.collect()
-        
-        # return last stored network, training params and residual test statistic
-        return net,params_train,teststat
+                del net_dict['net']
+                # now net_dict = {'teststat':value,'ptrain':dict} for this network
+
+                # unfortunate hack
+                file_stem_old = self.file_stem 
+                self.file_stem = net.file_stem
+                self.save_train(net_dict) 
+                self.file_stem = file_stem_old
+                
+                net_dict = None
+                net = None
+                cnt += 1
+
+            del all_nets
+            gc.collect()
+            
+            if self.verbose:
+                self.print_this("... defining and loading NetworkEnsembleObject",self.logfile)
+            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,verbose=self.verbose,logfile=self.logfile)
+            neo.load()
+                
+            return neo
+        else:
+            if self.verbose:
+                self.print_this("\n... identifying and saving best network and its teststat and training params",self.logfile)
+            ind_best = np.argmin(tsvals)
+            best_net = copy.deepcopy(all_nets[ind_best])
+            net = copy.deepcopy(best_net['net'])
+            net.file_stem = self.file_stem
+            net.params['file_stem'] = self.file_stem
+            net.save()
+            net.save_loss_history()
+
+            del best_net['net']
+            # now best_net = {'teststat':value,'ptrain':dict} for best network
+            self.save_train(best_net)
+            params_train = best_net['ptrain']
+            teststat = best_net['teststat']
+
+            del all_nets
+            shutil.rmtree(self.file_stem+'/')
+            del best_net
+            gc.collect()
+
+            # return last stored network, training params and residual test statistic
+            return net,params_train,teststat
     #############################
 
     #############################
-    def save_train(self,best_net):
+    def save_train(self,net_dict):
         """ Save training params and best test stat to file. """
         with open(self.file_stem + '_train.pkl', 'wb') as f:
-            pickle.dump(best_net,f)
+            pickle.dump(net_dict,f)
     #############################
 
     #############################
@@ -1045,6 +1039,122 @@ class BuildNN(Module,MLUtilities,Utilities):
 #################################
 
 
+#################################
+class NetworkEnsembleObject(MLUtilities,Utilities):
+    def __init__(self,ensemble_dir='./',verbose=True,logfile=None):
+        """ Class to load collection of Sequential instances as an ensemble of trained networks.
+            -- ensemble_dir: path to folder containing stored instances of mutually compatible networks, e.g. as result of BuildNN.trainNN call.
+            Methods:
+            -- load: load all Sequential instances in ensemble_dir into the dictionary self.ensemble
+            -- predict: weighted average prediction over all networks
+        """
+        self.ensemble_dir = ensemble_dir
+        self.verbose = verbose
+        self.logfile = logfile
+
+        if not Path(self.ensemble_dir).is_dir():
+            raise Exception(self.ensemble_dir + ' is not a valid path for a NetworkEnsembleObject')
+
+        self.ensemble = {} # will be updated by self.load as dictionary of Sequential instances and their teststats and training params.
+
+    def load(self):
+        if self.verbose:
+            self.print_this("... ... initializing dict self.ensemble",self.logfile)
+        for path in Path(self.ensemble_dir).glob("*.pkl"):
+            path_str = str(path)
+            if path_str[-10:-4] == '_train':
+                self.ensemble[path_str[:-10]] = {'net':None,'ptrain':None,'teststat':None}
+            
+        if self.verbose:
+            self.print_this("... ... updating ensemble",self.logfile)
+
+        self.keys = list(self.ensemble.keys())
+            
+        for key in self.keys:            
+            with open(key+'.pkl', 'rb') as f:
+                params_setup = pickle.load(f)
+            net = Sequential(params=params_setup)
+            net.load()
+            net.load_loss_history()
+            self.ensemble[key]['net'] = net
+            
+            with open(key+'_train.pkl', 'rb') as f:
+                net_dict = pickle.load(f)
+            self.ensemble[key]['ptrain'] = net_dict['ptrain']
+            self.ensemble[key]['teststat'] = net_dict['teststat']
+
+        if self.verbose:
+            self.print_this("... ... checking ensemble consistency",self.logfile)
+            
+        key_zero = self.keys[0]
+        self.n0 = self.ensemble[key_zero]['net'].n0
+        self.nlast = self.ensemble[key_zero]['net'].n_layer[-1]
+        self.net_type = self.ensemble[self.keys[0]]['net'].net_type
+        self.neg_labels = self.ensemble[self.keys[0]]['net'].neg_labels
+        
+        for key in self.keys:
+            if self.ensemble[key]['net'].n0 != self.n0:
+                raise Exception("n0 is incompatible for keys '"+key_zero+"' and '"+key+"'")
+            if self.ensemble[key]['net'].n_layer[-1] != self.nlast:
+                raise Exception("n_last is incompatible for keys '"+key_zero+"' and '"+key+"'")
+            if self.ensemble[key]['net'].net_type != self.net_type:
+                raise Exception("net_type is incompatible for keys '"+key_zero+"' and '"+key+"'")
+            
+        if self.net_type == 'class':
+            for key in self.keys:
+                if self.ensemble[key]['net'].neg_labels != self.neg_labels:
+                    raise Exception("neg_labels is incompatible for keys '"+key_zero+"' and '"+key+"'")
+                            
+        if self.verbose:
+            self.print_this("... ... defining ensemble weights",self.logfile)
+        self.weights = np.zeros(len(self.keys))
+        for r in range(len(self.keys)):
+            self.weights[r] = 1/(self.ensemble[keys[r]]['teststat'] + 1e-15) # inverse error weighting
+            
+        self.weights /= self.weights.sum()
+                
+        if self.verbose:
+            self.print_this("... ... ensemble loaded and checked",self.logfile)
+            
+        return
+
+    def predict(self,X):
+        if len(self.keys) == 0:
+            raise Exception("prediction can only happen after ensemble is loaded.")
+
+        predictions = np.zeros((len(self.keys),self.nlast,X.shape[1]))
+        if self.net_type == 'reg':
+            for r in range(len(self.keys)):
+                predictions[r] = self.ensemble[keys[r]]['net'].predict(X)
+            Ypred = np.sum(self.weights*predictions,axis=0)
+        else:
+            for r in range(len(self.keys)):
+                net = copy.deepcopy(self.ensemble[keys[r]]['net'])
+                net.net_type = 'reg'
+                net.modules[-1].net_type = 'reg'
+                # force last module to return non-negative probabilities rather than labels
+                net.forward(X)
+                # extract and record probabilities
+                ypred = net.modules[-1].predict()
+
+                # # currently no consistent way to switch on standardization for classification problems
+                # # in principle, net.force_standard should allow this, but haven't yet coded this up properly.
+                # if net.standardize:
+                #     # undo standardization
+                #     ypred *= (net.Y_std + 1e-15)
+                #     ypred += net.Y_mean
+                
+                predictions[r] = ypred
+                
+            Ypred = np.sum(self.weights*predictions,axis=0)
+            
+            if self.neg_labels:
+                # convert 0 to -1 if needed.
+                Ypred[Ypred < 1e-4] = -1.0
+            
+        return Ypred
+        
+#################################
 
 
 #################################
