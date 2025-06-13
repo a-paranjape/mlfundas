@@ -1028,7 +1028,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         with open(self.file_stem + '_train.pkl', 'rb') as f:
             best_net = pickle.load(f)
             params_train = best_net['ptrain']
-            teststat = best_net['ts']
+            teststat = best_net['teststat']
         return params_train,teststat
     #############################
 
