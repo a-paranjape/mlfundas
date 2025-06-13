@@ -1110,7 +1110,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             self.print_this("... ... defining ensemble weights",self.logfile)
         self.weights = np.zeros(len(self.keys))
         for r in range(len(self.keys)):
-            self.weights[r] = 1/(self.ensemble[keys[r]]['teststat'] + 1e-15) # inverse error weighting
+            self.weights[r] = 1/(self.ensemble[self.keys[r]]['teststat'] + 1e-15) # inverse error weighting
             
         self.weights /= self.weights.sum()
                 
