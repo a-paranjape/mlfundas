@@ -446,7 +446,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
                 self.sgd_step(t,lrate) # gradient descent update (will account for weight decay if requested)
                 
-            self.training_loss[t] = (batch_loss + decay_loss)/n_samp
+            self.training_loss[t] = (batch_loss + decay_loss/mb_count)/n_samp # (...) is loss over full training sample + mean decay loss over batches
             
             # always save first network
             if t == 0:
