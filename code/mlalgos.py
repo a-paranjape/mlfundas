@@ -932,7 +932,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                                         pset['threshold'] = threshold
                                         for it in range(self.n_iter):
                                             X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
-                                            tasks.append((X_train,Y_train,X_test,Y_test,pset,ptrn,cnt_max))
+                                            tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
 
         # train networks
         if len(tasks) != cnt_max:
