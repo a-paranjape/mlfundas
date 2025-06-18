@@ -243,7 +243,8 @@ class MLUtilities(object):
                           E.g.: in case 2 we might set tasks = (X,Y,params,net), where 
                                 net is a Sequential instance and X,Y,params are inputs to net.train(). 
             -- queuer: target function with call signature (r,arg1,..,argn,method/instance,mdict)
-                       where r is the integer index of a task and mdict is a common managed dictionary, i.e. instance of multiprocessing.Manager.dict() 
+                       where r is the integer index of a task and mdict is a common managed dictionary, 
+                       i.e. instance of multiprocessing.Manager.dict() 
                        that can be used internally by the queuer to pass arbitrary data structures from a child to the parent process.
                        If instance passed instead of method, queuer should internally use appropriate method of the instance.
             -- max_procs: int, maximum number of concurrent processes.
@@ -251,7 +252,7 @@ class MLUtilities(object):
             Returns updated mdict.
         """
         default_method = mp.get_start_method()
-        # mp.set_start_method("spawn",force=True)
+        mp.set_start_method("spawn",force=True)
         
         manager = mp.Manager()
         mdict = manager.dict({r+1:None for r in range(len(tasks))}) # need this to pass around class instances
