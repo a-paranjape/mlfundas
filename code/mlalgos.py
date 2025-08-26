@@ -171,8 +171,9 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['threshold']: float, controls behaviour of classification prediction. Default None, meaning: 0.5 ('sigm'), 0.0 ('tanh','relu','lin').
             ** Note that, ideally, last entry in 'atypes' must be consistent with 'loss' **
             ** [{'square','hinge'} <-> 'lin','nll' <-> 'sigm','nllm' <-> 'sm'] **
-            -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
-            -- params['force_standard']: boolean, whether or not to force standardization (default False).
+            -- params['standardize_X']: boolean, whether or not to standardize training data features in train() (default True)
+            -- params['standardize_Y']: boolean, whether or not to standardize training data labels in train() (default True)
+            -- params['force_standard']: boolean, whether or not to force label standardization (default False).
                                          Useful when setting up classification networks for continuous output.
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['lrelu_slope']: float in (-1,1), slope of leaky ReLU if used (default 1e-2).
@@ -202,8 +203,10 @@ class Sequential(Module,MLUtilities,Utilities):
         self.custom_loss = params.get('custom_loss',None) 
         self.neg_labels = params.get('neg_labels',True)
         self.threshold = params.get('threshold',None)
-        self.standardize = params.get('standardize',True)
-        self.params['standardize'] = self.standardize # for consistency with self.save and self.load
+        self.standardize_X = params.get('standardize_X',True)
+        self.params['standardize_X'] = self.standardize_X # for consistency with self.save and self.load
+        self.standardize_Y = params.get('standardize_Y',True)
+        self.params['standardize_Y'] = self.standardize_Y # for consistency with self.save and self.load
         self.force_standard = params.get('force_standard',False)
         self.adam = params.get('adam',True)
         self.lrelu_slope = params.get('lrelu_slope',1e-2)
@@ -222,8 +225,14 @@ class Sequential(Module,MLUtilities,Utilities):
         self.Y_mean = 0.0
         self.params['Y_std'] = self.Y_std
         self.params['Y_mean'] = self.Y_mean
-        # will be reset by self.train() if self.standardize == True
+        # will be reset by self.train() if self.standardize_Y == True
 
+        self.X_std = 1.0
+        self.X_mean = 0.0
+        self.params['X_std'] = self.X_std
+        self.params['X_mean'] = self.X_mean
+        # will be reset by self.train() if self.standardize_X == True
+        
         if self.verbose:
             self.print_this("... setting up {0:d} layer feed-forward neural network".format(self.L),self.logfile)
         
@@ -296,10 +305,10 @@ class Sequential(Module,MLUtilities,Utilities):
         else:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] or 'custom...' in Sequential().")
 
-        if self.standardize & (self.loss_type != 'square') & (not self.force_standard):
+        if self.standardize_Y & (self.loss_type != 'square') & (not self.force_standard):
             if self.verbose:
                 self.print_this('Warning!: Standardization incompatible with classification problems, switching off.',self.logfile)
-            self.standardize = False
+            self.standardize_Y = False
 
         for l in range(self.L):
             if self.atypes[l][:6] == 'custom':
@@ -394,7 +403,18 @@ class Sequential(Module,MLUtilities,Utilities):
             X_val = X[:,ind_val].copy()
             Y_val = Y[:,ind_val].copy()
         
-        if self.standardize:
+        if self.standardize_X:
+            self.X_std = np.std(X,axis=1,keepdims=True)
+            self.X_mean = np.mean(X,axis=1,keepdims=True)
+            self.params['X_std'] = self.X_std
+            self.params['X_mean'] = self.X_mean
+            X_train -= self.X_mean
+            X_train /= (self.X_std + 1e-15)
+            if n_val > 0:
+                X_val -= self.X_mean
+                X_val /= (self.X_std + 1e-15)
+            
+        if self.standardize_Y:
             self.Y_std = np.std(Y,axis=1,keepdims=True)
             self.Y_mean = np.mean(Y,axis=1,keepdims=True)
             self.params['Y_std'] = self.Y_std
@@ -404,7 +424,7 @@ class Sequential(Module,MLUtilities,Utilities):
             if n_val > 0:
                 Y_val -= self.Y_mean
                 Y_val /= (self.Y_std + 1e-15)
-            
+                
         if (mb_count > n_samp) | (mb_count < 1):
             if self.verbose:
                 self.print_this("Incompatible mb_count in Sequential.sgd(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
@@ -514,11 +534,12 @@ class Sequential(Module,MLUtilities,Utilities):
         if X.shape[0] != self.n0:
             raise TypeError("Incompatible data in Sequential.predict(). Expected {0:d}, got {1:d}".format(self.n0,X.shape[0]))
         # update all activations.
-        self.forward(X)
+        self.forward((X - self.X_mean)/(self.X_std + 1e-15)) # account for standardization, if requested
+        # predict
+        Ypred = self.modules[-1].predict()        
         # modify last activation into labels if needed.
         # if labels, these will always be non-negative
-        Ypred = self.modules[-1].predict()
-        if self.standardize:
+        if self.standardize_Y:
             # undo standardization
             Ypred *= (self.Y_std + 1e-15)
             Ypred += self.Y_mean
@@ -532,11 +553,11 @@ class Sequential(Module,MLUtilities,Utilities):
             Expect X.shape = (n0,n_samp)
         """
         # will currently break with BatchNorm and DropNorm modules
-        Ypred = self.forward(X) # update activations. prediction for provided input
+        Ypred = self.forward((X - self.X_mean)/(self.X_std + 1e-15)) # update activations. prediction for provided input
         dYdX = np.array([np.eye(self.n_layer[-1])]*X.shape[1]).T # (nL,nL,b)
         for m in self.modules[-1::-1]:
             dYdX = m.backward(dYdX,grad=True)
-        if self.standardize:
+        if self.standardize_Y:
             # undo standardization
             dYdX *= (self.Y_std + 1e-15)
         return dYdX
@@ -567,11 +588,16 @@ class Sequential(Module,MLUtilities,Utilities):
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
             
-        self.standardize = self.params['standardize']
-        if self.standardize:
+        self.standardize_X = self.params['standardize_X']
+        if self.standardize_X:
+            self.X_std = self.params['X_std']
+            self.X_mean = self.params['X_mean']
+        
+        self.standardize_Y = self.params['standardize_Y']
+        if self.standardize_Y:
             self.Y_std = self.params['Y_std']
             self.Y_mean = self.params['Y_mean']
-        
+            
         return
 
     def save_loss_history(self):
@@ -609,7 +635,7 @@ class Sequential(Module,MLUtilities,Utilities):
         params_setup['L'] -= 1
         params_setup['n_layer'].pop(-1)
         params_setup['atypes'].pop(-1)
-        params_setup['standardize'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key.
+        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key.
         basis = Sequential(params=params_setup)
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules[m])
@@ -622,10 +648,10 @@ class Sequential(Module,MLUtilities,Utilities):
             -- X: input array of shape (n0,n_params) as used for NN (value of n_params can vary).
             Returns final output of NN as (activated) linear combination of basis functions.
         """
-        basis_func = basis.predict(X)
+        basis_func = basis.predict((X - self.X_mean)/(self.X_std + 1e-15))
         Z = self.modules[-2].forward(basis_func)
         A = self.modules[-1].forward(Z)
-        if self.standardize:
+        if self.standardize_Y:
             A *= self.Y_std
             A += self.Y_mean
         return A
@@ -647,7 +673,7 @@ class Sequential(Module,MLUtilities,Utilities):
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
     #############################
-    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize=True,
+    def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize_X=True,standardize_Y=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=None,loss_type='square',test_type='perc',htypes=None,
                  neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,
@@ -658,7 +684,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.Y = Y
         self.val_frac = val_frac
         self.train_frac = train_frac
-        self.standardize = standardize
+        self.standardize_X = standardize_X
+        self.standardize_Y = standardize_Y
         self.n_iter = n_iter # no. of times to iterate training/test generation
         self.test_type = test_type # type of test for hyperparam search: either 'perc' (residual percentiles) or 'mse' (mean squared error)
         self.htypes = htypes # None or list of strings. Control which hidden layer activations to search over
@@ -861,7 +888,8 @@ class BuildNN(Module,MLUtilities,Utilities):
         mb_count = int(np.sqrt(self.n_train)) 
         max_epoch = 1000000 # validation checks will be active
         
-        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'standardize':self.standardize,
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
+                'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after}
         
@@ -1143,13 +1171,13 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 net.net_type = 'reg'
                 net.modules[-1].net_type = 'reg'
                 # force last module to return non-negative probabilities rather than labels
-                net.forward(X)
+                net.forward((X - net.X_mean)/(net.X_std + 1e-15))
                 # extract and record probabilities
                 ypred = net.modules[-1].predict()
 
                 # # currently no consistent way to switch on standardization for classification problems
                 # # in principle, net.force_standard should allow this, but haven't yet coded this up properly.
-                # if net.standardize:
+                # if net.standardize_Y:
                 #     # undo standardization
                 #     ypred *= (net.Y_std + 1e-15)
                 #     ypred += net.Y_mean
@@ -1204,7 +1232,8 @@ class BiSequential(Module,MLUtilities,Utilities):
             -- params['decay_norm_w']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
 
             ---- common
-            -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
+            -- params['standardize_X']: boolean, whether or not to standardize training data features in train() (default True)
+            -- params['standardize_Y']: boolean, whether or not to standardize training data labels in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
@@ -1238,8 +1267,10 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.wt_decay_w = params.get('wt_decay_w',0.0)
         self.decay_norm_w = int(params.get('decay_norm_w',2))
         
-        self.standardize = params.get('standardize',True)
-        self.params['standardize'] = self.standardize
+        self.standardize_X = params.get('standardize_X',True)
+        self.params['standardize_X'] = self.standardize_X
+        self.standardize_Y = params.get('standardize_Y',True)
+        self.params['standardize_Y'] = self.standardize_Y
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
@@ -1250,12 +1281,18 @@ class BiSequential(Module,MLUtilities,Utilities):
         
         self.rng = np.random.RandomState(self.seed)
         
+        self.X_std = 1.0
+        self.X_mean = 0.0
+        self.params['X_std'] = self.X_std
+        self.params['X_mean'] = self.X_mean
+        # will be reset by self.train() if self.standardize_X == True
+
         self.Y_std = 1.0
         self.Y_mean = 0.0
         self.params['Y_std'] = self.Y_std
         self.params['Y_mean'] = self.Y_mean
-        # will be reset by self.train() if self.standardize == True
-
+        # will be reset by self.train() if self.standardize_Y == True
+        
         if self.verbose:
             self.print_this("Setting up {0:d},{1:d} layer feed-forward bi-neural network".format(self.La,self.Lw),self.logfile)
             
@@ -1475,7 +1512,18 @@ class BiSequential(Module,MLUtilities,Utilities):
             X_val = X[:,ind_val].copy()
             Y_val = Y[:,ind_val].copy()
         
-        if self.standardize:
+        if self.standardize_X:
+            self.X_std = np.std(X,axis=1,keepdims=True)
+            self.X_mean = np.mean(X,axis=1,keepdims=True)
+            self.params['X_std'] = self.X_std
+            self.params['X_mean'] = self.X_mean
+            X_train -= self.X_mean
+            X_train /= (self.X_std + 1e-15)
+            if n_val > 0:
+                X_val -= self.X_mean
+                X_val /= (self.X_std + 1e-15)
+
+        if self.standardize_Y:
             self.Y_std = np.std(Y,axis=1,keepdims=True)
             self.Y_mean = np.mean(Y,axis=1,keepdims=True)
             self.params['Y_std'] = self.Y_std
@@ -1485,7 +1533,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             if n_val > 0:
                 Y_val -= self.Y_mean
                 Y_val /= (self.Y_std + 1e-15)
-            
+                
         if (mb_count > n_samp) | (mb_count < 1):
             if self.verbose:
                 self.print_this("Incompatible mb_count in BiSequential.train(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
@@ -1589,8 +1637,8 @@ class BiSequential(Module,MLUtilities,Utilities):
         if X.shape[0] != self.n0w+self.n0a:
             raise TypeError("Incompatible data in BiSequential.predict(). Expected {0:d}+{1:d}, got {2:d}".format(self.n0w+self.n0a,X.shape[0]))
         # update all activations and predict.
-        Ypred,apred,wpred = self.forward(X)
-        if self.standardize:
+        Ypred,apred,wpred = self.forward((X - self.X_mean)/(self.X_std + 1e-15)) # account for standardization, if requested
+        if self.standardize_Y:
             # undo standardization
             Ypred *= (self.Y_std + 1e-15)
             Ypred += self.Y_mean
@@ -1643,8 +1691,13 @@ class BiSequential(Module,MLUtilities,Utilities):
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
             
-        self.standardize = self.params['standardize']
-        if self.standardize:
+        self.standardize_X = self.params['standardize_X']
+        if self.standardize_X:
+            self.X_std = self.params['X_std']
+            self.X_mean = self.params['X_mean']
+            
+        self.standardize_Y = self.params['standardize_Y']
+        if self.standardize_Y:
             self.Y_std = self.params['Y_std']
             self.Y_mean = self.params['Y_mean']
         
@@ -1659,7 +1712,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         params_setup['L'] = params_setup['La']
         params_setup['n_layer'] = params_setup['n_layer_a']
         params_setup['atypes'] = params_setup['atypes_a']
-        params_setup['standardize'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
+        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
         basis = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules_a[m])
@@ -1676,7 +1729,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         params_setup['L'] = params_setup['Lw']
         params_setup['n_layer'] = params_setup['n_layer_w']
         params_setup['atypes'] = params_setup['atypes_w']
-        params_setup['standardize'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
+        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
         coeffs = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(coeffs.modules)):
             coeffs.modules[m] = copy.deepcopy(self.modules_w[m])
