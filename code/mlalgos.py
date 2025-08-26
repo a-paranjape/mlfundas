@@ -1129,6 +1129,8 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         self.nlast = self.ensemble[key_zero]['net'].n_layer[-1]
         self.net_type = self.ensemble[self.keys[0]]['net'].net_type
         self.neg_labels = self.ensemble[self.keys[0]]['net'].neg_labels
+        if self.net_type == 'class':
+            self.threshold = self.ensemble[self.keys[0]]['net'].threshold
         
         for key in self.keys:
             if self.ensemble[key]['net'].n0 != self.n0:
@@ -1142,6 +1144,10 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             for key in self.keys:
                 if self.ensemble[key]['net'].neg_labels != self.neg_labels:
                     raise Exception("neg_labels is incompatible for keys '"+key_zero+"' and '"+key+"'")
+                
+            for key in self.keys:
+                if self.ensemble[key]['net'].threshold != self.threshold:
+                    raise Exception("threshold is incompatible for keys '"+key_zero+"' and '"+key+"'")
                             
         if self.verbose:
             self.print_this("... ... defining ensemble weights",self.logfile)
@@ -1183,8 +1189,9 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 #     ypred += net.Y_mean
                 
                 predictions[r] = ypred
-                
-            Ypred = np.sum(self.weights*predictions,axis=0)
+                net = None
+
+            Ypred = self.step_fun(np.sum(self.weights*predictions,axis=0)-self.threshold)
             
             if self.neg_labels:
                 # convert 0 to -1 if needed.
