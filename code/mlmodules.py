@@ -528,6 +528,8 @@ def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,l
     for l in range(1,L+1):
         if atypes[l-1] == 'relu':
             mod.append(ReLU(layer=l+1))
+        elif atypes[l-1] == 'requ':
+            mod.append(ReQU(layer=l+1))
         elif atypes[l-1] == 'lrelu':
             mod_lrelu = LReLU(layer=l+1)
             mod_lrelu.slope = lrelu_slope
