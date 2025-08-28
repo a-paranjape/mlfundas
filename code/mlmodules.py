@@ -134,6 +134,32 @@ class LReLU(Module,MLUtilities):
         return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
+
+#################
+class ReQU(Module,MLUtilities):
+    net_type = 'reg'
+    threshold = 0.0
+    
+    def forward(self,Z):
+        self.relu = np.maximum(0.0,Z)
+        self.A = self.relu**2
+        return self.A
+
+    def backward(self,dLdA,grad=None): 
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        dLdZ = 2*self.relu
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
+        return dLdZ
+    
+    def predict(self):
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
+#################
+
+
 #################
 class Identity(Module,MLUtilities):
     net_type = 'reg'
