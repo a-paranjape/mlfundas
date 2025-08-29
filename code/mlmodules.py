@@ -52,9 +52,6 @@ class Sigmoid(Module,MLUtilities):
         return dLdZ
     
     def predict(self):
-        # out = np.zeros_like(self.A)
-        # out[self.A > self.threshold] = 1.0
-        # return out
         return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
     
 #################
@@ -106,6 +103,31 @@ class ReLU(Module,MLUtilities):
         return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
+#################
+class SoftPlus(Module,MLUtilities):
+    net_type = 'reg'
+    threshold = 0.0
+    
+    def forward(self,Z):
+        # log(1 + exp(z)) = log(exp(z)(exp(-z) + 1)) = z + log(1+exp(-z)) = z - log(sigmoid(z))
+        self.sigm = 1/(1+np.exp(-Z))
+        self.A = Z - np.log(self.sigm) # numerically more robust to large z
+        return self.A
+
+    def backward(self,dLdA,grad=False):
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        # dA/dz = d/dz log(1+exp(z)) = exp(z)/(1+exp(z)) = 1/(1+exp(-z)) = sigmoid(z)
+        dLdZ = self.sigm # (n_this,b)
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdZ*dLdA
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
+        return dLdZ
+    
+    def predict(self):
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)    
+#################
 
 
 #################
@@ -529,6 +551,8 @@ def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,l
         if atypes[l-1] == 'relu':
             mod.append(ReLU(layer=l+1))
         elif atypes[l-1] == 'requ':
+            mod.append(ReQU(layer=l+1))
+        elif atypes[l-1] == 'splus':
             mod.append(ReQU(layer=l+1))
         elif atypes[l-1] == 'lrelu':
             mod_lrelu = LReLU(layer=l+1)
