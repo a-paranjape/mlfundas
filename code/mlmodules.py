@@ -109,9 +109,19 @@ class SoftPlus(Module,MLUtilities):
     threshold = 0.0
     
     def forward(self,Z):
+        self.sigm = np.zeros_like(Z)
+        self.A = np.zeros_like(Z)
+        c_pos = (Z >= 0.0)
         # log(1 + exp(z)) = log(exp(z)(exp(-z) + 1)) = z + log(1+exp(-z)) = z - log(sigmoid(z))
-        self.sigm = 1/(1+np.exp(-Z))
-        self.A = Z - np.log(self.sigm) # numerically more robust to large z
+        self.sigm[c_pos] = 1/(1+np.exp(-Z[c_pos]))
+        self.A[c_pos] = Z[c_pos] - np.log(self.sigm[c_pos]) # numerically more robust to large positive z
+
+        expz = np.exp(Z[~c_pos])
+        self.A[~c_pos] = np.log(1 + expz)
+        # sigmoid(z) = 1/(1+exp(-z)) = exp(z)/(1+exp(z))
+        self.sigm[~c_pos] = (expz + 1e-15)/(1+expz) # numerically more robust to large negative z
+        expz = None
+        c_pos = None
         return self.A
 
     def backward(self,dLdA,grad=False):
