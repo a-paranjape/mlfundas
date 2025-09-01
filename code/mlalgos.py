@@ -587,16 +587,33 @@ class Sequential(Module,MLUtilities,Utilities):
             m.load()
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
-            
-        self.standardize_X = self.params['standardize_X']
-        if self.standardize_X:
-            self.X_std = self.params['X_std']
-            self.X_mean = self.params['X_mean']
+
+        if 'standardize_X' in list(self.params.keys()):
+            self.standardize_X = self.params['standardize_X']
+            if self.standardize_X:
+                self.X_std = self.params['X_std']
+                self.X_mean = self.params['X_mean']
+        else:
+            # ensure backward compatibility for networks created before standardize_X,Y were separated
+            self.standardize_X = False
+            self.X_std = 1.0
+            self.X_mean = 0.0
         
-        self.standardize_Y = self.params['standardize_Y']
-        if self.standardize_Y:
-            self.Y_std = self.params['Y_std']
-            self.Y_mean = self.params['Y_mean']
+        if 'standardize_Y' in list(self.params.keys()):
+            self.standardize_Y = self.params['standardize_Y']
+            if self.standardize_Y:
+                self.Y_std = self.params['Y_std']
+                self.Y_mean = self.params['Y_mean']
+        elif 'standardize' in list(self.params.keys()):
+            self.standardize_Y = self.params['standardize']
+            if self.standardize_Y:
+                self.Y_std = self.params['Y_std']
+                self.Y_mean = self.params['Y_mean']
+        else:
+            # ensure backward compatibility for networks created before standardize_X,Y were separated
+            self.standardize_Y = True
+            self.Y_std = 1.0
+            self.Y_mean = 0.0
             
         return
 
@@ -1698,15 +1715,32 @@ class BiSequential(Module,MLUtilities,Utilities):
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
             
-        self.standardize_X = self.params['standardize_X']
-        if self.standardize_X:
-            self.X_std = self.params['X_std']
-            self.X_mean = self.params['X_mean']
-            
-        self.standardize_Y = self.params['standardize_Y']
-        if self.standardize_Y:
-            self.Y_std = self.params['Y_std']
-            self.Y_mean = self.params['Y_mean']
+        if 'standardize_X' in list(self.params.keys()):
+            self.standardize_X = self.params['standardize_X']
+            if self.standardize_X:
+                self.X_std = self.params['X_std']
+                self.X_mean = self.params['X_mean']
+        else:
+            # ensure backward compatibility for networks created before standardize_X,Y were separated
+            self.standardize_X = False
+            self.X_std = 1.0
+            self.X_mean = 0.0
+        
+        if 'standardize_Y' in list(self.params.keys()):
+            self.standardize_Y = self.params['standardize_Y']
+            if self.standardize_Y:
+                self.Y_std = self.params['Y_std']
+                self.Y_mean = self.params['Y_mean']
+        elif 'standardize' in list(self.params.keys()):
+            self.standardize_Y = self.params['standardize']
+            if self.standardize_Y:
+                self.Y_std = self.params['Y_std']
+                self.Y_mean = self.params['Y_mean']
+        else:
+            # ensure backward compatibility for networks created before standardize_X,Y were separated
+            self.standardize_Y = True
+            self.Y_std = 1.0
+            self.Y_mean = 0.0
         
         return
 
