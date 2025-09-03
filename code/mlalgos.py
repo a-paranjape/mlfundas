@@ -159,7 +159,7 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['data_dim']: int, input data dimension
             -- params['L']: int, L >= 1, number of layers
             -- params['n_layer']: list of L int, number of units in each layer. ** must have n_layer[-1] = y.shape[0] **
-            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sm','lin'] or 'custom...'.
+            -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                  If 'custom...', then also define dictionary params['custom_atypes']
             -- params['custom_atypes']: dictionary with keys matching 'custom...' entry in params['atypes']
                                         with items being activation module instances.
@@ -811,10 +811,10 @@ class BuildNN(Module,MLUtilities,Utilities):
                 self.htypes = None
             good_htype = True
             for h in range(len(self.htypes)):
-                if self.htypes[h] not in ['tanh','relu','lrelu','requ','splus']:
+                if self.htypes[h] not in ['tanh','relu','lrelu','requ','splus','sin']:
                     good_htype = False
             if not good_htype:
-                print("Warning: htypes list should be subset of ['tanh','relu','lrelu','requ','splus'] in BuildNN(). Setting htypes to None.")
+                print("Warning: htypes list should be subset of ['tanh','relu','lrelu','requ','splus','sin'] in BuildNN(). Setting htypes to None.")
                 self.htypes = None
 
         if self.target_test_stat is not None:
@@ -1238,7 +1238,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             ---- network NNa
             -- params['La']: int, La >= 1, number of layers in basis function NNa
             -- params['n_layer_a']: list of La int, number of units in each layer of NNa. ** must have n_layer_a[-1] >= 1 (no. of non-trivial basis funcs) **
-            -- params['atypes_a']: list of La str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+            -- params['atypes_a']: list of La str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_a']
             -- params['custom_atypes_a']: dictionary with keys matching 'custom...' entry in params['atypes_a']
                                           with items being activation module instances.
@@ -1248,7 +1248,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             ---- network NNw
             -- params['Lw']: int, Lw >= 1, number of layers in coefficients NNw
             -- params['n_layer_w']: list of Lw int, number of units in each layer of NNw. ** must have n_layer_w[-1] = n_layer_a[-1]+1 **
-            -- params['atypes_w']: list of Lw str, activation type in each layer chosen from ['sigm','tanh','relu','sm','lin'] or 'custom...'.
+            -- params['atypes_w']: list of Lw str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_w']
             -- params['custom_atypes_w']: dictionary with keys matching 'custom...' entry in params['atypes_w']
                                           with items being activation module instances.
@@ -1817,7 +1817,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- params['Lg']: int, Lg >= 1, number of layers in generator Gen
             -- params['n_layer_g']: list of Lg int, number of units in each layer of Gen. 
                                     ** must have n_layer_g[-1] = X.shape[0] (data dimension) **
-            -- params['atypes_g']: list of Lg str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sm','lin'] or 'custom...'.
+            -- params['atypes_g']: list of Lg str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_a']
                                    ** must have atypes_g[-1] = 'lin' (regression output) or 'tanh' (standardized regression output) **
             -- params['custom_atypes_g']: dictionary with keys matching 'custom...' entry in params['atypes_g']
@@ -1832,10 +1832,10 @@ class GAN(Module,MLUtilities,Utilities):
             -- params['Ld']: int, Ld >= 1, number of layers in discriminator Disc
             -- params['n_layer_d']: list of Ld int, number of units in each layer of Disc. 
                                     ** must have n_layer_d[-1] = 1 (classification probability output) **
-            -- params['atypes_d']: list of Ld str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sm','lin'] or 'custom...'.
+            -- params['atypes_d']: list of Ld str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                    If 'custom...', then also define dictionary params['custom_atypes_d']
                                    ** if gan_type = modified/minimax: must have atypes_d[-1] = 'sigm' (classification probability output) **
-                                   ** if gan_type =    wasserstein  : must have atypes_d[-1] = 'lin','relu','lrelu','requ' or 'splus' (regression output) **
+                                   ** if gan_type =    wasserstein  : must have atypes_d[-1] = 'lin','relu','lrelu','requ','splus' or 'sin' (regression output) **
             -- params['custom_atypes_d']: dictionary with keys matching 'custom...' entry in params['atypes_d']
                                           with items being activation module instances.
             -- params['wt_decay_d']: float, weight decay coefficient (should be non-negative; default 0.0)
@@ -2043,9 +2043,9 @@ class GAN(Module,MLUtilities,Utilities):
                     print("Warning!: atypes_d[-1] must refer to Sigmoid activation for modified/minimax in GAN(). Setting to 'sigm'.")
                 self.atypes_d[-1] = 'sigm'
         elif self.gan_type in ['wasserstein']:
-            if self.atypes_d[-1] not in ['lin','relu','lrelu','tanh','requ','splus']:
+            if self.atypes_d[-1] not in ['lin','relu','lrelu','tanh','requ','splus','sin']:
                 if self.verbose:
-                    print("Warning!: atypes_d[-1] must be in ['lin','relu','lrelu','tanh','requ','splus'] for Wasserstein in GAN(). Setting to 'lin'.")
+                    print("Warning!: atypes_d[-1] must be in ['lin','relu','lrelu','tanh','requ','splus','sin'] for Wasserstein in GAN(). Setting to 'lin'.")
                 self.atypes_d[-1] = 'lin'
 
         if (self.use_tanh & self.use_sigm):

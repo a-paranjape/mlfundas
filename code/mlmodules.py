@@ -191,6 +191,29 @@ class ReQU(Module,MLUtilities):
         return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
 #################
 
+#################
+class Sine(Module,MLUtilities):
+    net_type = 'reg'
+    threshold = 0.0
+    
+    def forward(self,Z):
+        self.A = np.sin(Z)
+        self.Z = Z
+        return self.A
+
+    def backward(self,dLdA,grad=None): 
+        # dLdA -> (n_this,b) if grad=False else (n_this,n_last,b)
+        if grad:
+            dLdA = np.transpose(dLdA,axes=(1,0,2)) # (n_last,n_this,b)
+        dLdZ = dLdA*np.cos(self.Z)
+        if grad:
+            dLdZ = np.transpose(dLdZ,axes=(1,0,2)) # (n_this,n_last,b)
+        return dLdZ
+    
+    def predict(self):
+        return self.A if self.net_type == 'reg' else self.step_fun(self.A-self.threshold)
+#################
+
 
 #################
 class Identity(Module,MLUtilities):
@@ -572,6 +595,8 @@ def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,l
             mod.append(Tanh(layer=l+1))
         elif atypes[l-1] == 'sigm':
             mod.append(Sigmoid(layer=l+1))
+        elif atypes[l-1] == 'sin':
+            mod.append(Sine(layer=l+1))
         elif atypes[l-1] == 'lin':
             mod.append(Identity(layer=l+1))
         elif atypes[l-1] == 'sm':
