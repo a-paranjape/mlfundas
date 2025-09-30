@@ -299,8 +299,8 @@ class BatchNorm(Module,MLUtilities):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
         self.eps = 1e-15
-        self.W = rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1); called G in MIT-OLL course
-        self.W0 = rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
+        self.W = self.rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1); called G in MIT-OLL course
+        self.W0 = self.rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
         self.layer = layer # useful for tracking save/read filenames        
         self.is_norm = True
 
@@ -506,8 +506,8 @@ class Linear(Module,MLUtilities):
         self.eps_adam = eps_adam
         
         # initialize bias and weights
-        self.W = rng.randn(n_this,n_next)/np.sqrt(n_this) # (n_this,n_next)
-        self.W0 = rng.randn(n_next,1) # (n_next,1)
+        self.W = self.rng.randn(n_this,n_next)/np.sqrt(n_this) # (n_this,n_next)
+        self.W0 = self.rng.randn(n_next,1) # (n_next,1)
         if self.adam:
             self.M = np.zeros_like(self.W)
             self.M0 = np.zeros_like(self.W0)
