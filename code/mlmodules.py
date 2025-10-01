@@ -3,9 +3,10 @@ from mllib import MLUtilities
 
 #############################################
 class Module(object):
-    def __init__(self,layer=1):
+    def __init__(self,layer=1,resume=False):
         # for compatibility with weighted modules 
         self.layer = layer
+        self.resume = resume
         self.W = None
         self.W0 = None
         
@@ -29,6 +30,7 @@ class Module(object):
     
     def backward(self,dLdA,grad=False): 
         raise NotImplementedError
+#############################################
     
 #################################
 # possible activation modules
@@ -263,8 +265,9 @@ class SoftMax(Module,MLUtilities):
 # possible normalizations
 #################
 class DropNorm(Module,MLUtilities):
-    def __init__(self,layer=1,p_drop=0.2,rng=None,drop=True):
+    def __init__(self,layer=1,resume=False,p_drop=0.2,rng=None,drop=True):
         self.layer = layer # for compatibility with weighted modules
+        self.resume = resume
         self.p_drop = p_drop
         self.drop = drop
         self.rng = np.random.RandomState() if rng is None else rng
@@ -295,15 +298,17 @@ class DropNorm(Module,MLUtilities):
 #################################
 class BatchNorm(Module,MLUtilities):
     # structure courtesy MIT-OLL IntroML Course
-    def __init__(self,n_this,layer=1,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
+    def __init__(self,n_this,layer=1,resume=False,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
         self.n_this = n_this # input layer dimension
         self.rng = np.random.RandomState() if rng is None else rng
         self.eps = 1e-15
-        self.W = self.rng.randn(n_this,1)/np.sqrt(n_this) # (n_this,1); called G in MIT-OLL course
-        self.W0 = self.rng.randn(n_this,1) # (n_this,1); called B in MIT-OLL course
-        self.layer = layer # useful for tracking save/read filenames        
+        self.layer = layer # useful for tracking save/read filenames
+        self.resume = resume
         self.is_norm = True
 
+        self.W = np.zeros((self.n_this,1))  # will be set by
+        self.W0 = np.zeros((self.n_this,1)) # Modulate call
+            
         # adam support
         self.adam = adam
         self.B1_adam = B1_adam
@@ -490,13 +495,14 @@ class Hinge(Module,MLUtilities):
 # Linear module
 #################
 class Linear(Module,MLUtilities):
-    def __init__(self,n_this,n_next,layer=1,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
+    def __init__(self,n_this,n_next,layer=1,resume=False,rng=None,adam=True,B1_adam=0.9,B2_adam=0.999,eps_adam=1e-8):
         self.rng = np.random.RandomState() if rng is None else rng
         
         # input,output sizes
         self.n_this,self.n_next = (n_this,n_next)
 
         self.layer = layer # useful for tracking save/read filenames
+        self.resume = resume
         self.is_norm = False
 
         # adam support
@@ -506,8 +512,8 @@ class Linear(Module,MLUtilities):
         self.eps_adam = eps_adam
         
         # initialize bias and weights
-        self.W = self.rng.randn(n_this,n_next)/np.sqrt(n_this) # (n_this,n_next)
-        self.W0 = self.rng.randn(n_next,1) # (n_next,1)
+        self.W = np.zeros((self.n_this,self.n_next)) # will be set by
+        self.W0 = np.zeros((self.n_next,1))          # Modulate call
         if self.adam:
             self.M = np.zeros_like(self.W)
             self.M0 = np.zeros_like(self.W0)
@@ -573,45 +579,84 @@ class Linear(Module,MLUtilities):
 #################################
 
 #################################
-def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,lrelu_slope=1e-2):
+def gen_filestems(modules,file_stem):
+    """ Helper function to set module file stems.
+        -- modules: list of instantiated modules
+        -- file_stem: string
+        Returns updated list of instantiated modules.
+    """
+    for m in modules:
+        m.file_stem = file_stem
+        if m.is_norm:
+            m.file_stem += '_norm'
+        m.file_stem += '_layer{0:d}'.format(m.layer)
+    return modules
+#################################
+
+#################################
+def initialize_modules(modules):
+    """ Helper function to initialize weighted modules. """
+    for m in modules:
+        if m.W is not None:
+            if m.resume:
+                m.load()
+            else:
+                if m.is_norm:
+                    # BatchNorm
+                    m.W = m.rng.randn(m.n_this,1)/np.sqrt(m.n_this) # (n_this,1); called G in MIT-OLL course
+                    m.W0 = m.rng.randn(m.n_this,1) # (n_this,1); called B in MIT-OLL course
+                else:
+                    # Linear
+                    m.W = m.rng.randn(m.n_this,m.n_next)/np.sqrt(m.n_this) # (n_this,n_next)
+                    m.W0 = m.rng.randn(m.n_next,1) # (n_next,1)
+
+    return modules
+#################################
+
+
+#################################
+def Modulate(n0,n_layer,atypes,rng,adam,reg_fun,p_drop,custom_atypes,threshold,lrelu_slope=1e-2,file_stem=None,resume=False):
     """ Simple utility to produce modules for use in feed-forward networks. 
         Assumes all inputs have been checked. 
         Returns list of instantiated modules.
     """
     L = len(atypes)
-    mod = [Linear(n0,n_layer[0],rng=rng,adam=adam,layer=1)]
+    mod = [Linear(n0,n_layer[0],rng=rng,adam=adam,layer=1,resume=resume)]
     for l in range(1,L+1):
         if atypes[l-1] == 'relu':
-            mod.append(ReLU(layer=l+1))
+            mod.append(ReLU(layer=l+1,resume=resume))
         elif atypes[l-1] == 'requ':
-            mod.append(ReQU(layer=l+1))
+            mod.append(ReQU(layer=l+1,resume=resume))
         elif atypes[l-1] == 'splus':
-            mod.append(SoftPlus(layer=l+1))
+            mod.append(SoftPlus(layer=l+1,resume=resume))
         elif atypes[l-1] == 'lrelu':
-            mod_lrelu = LReLU(layer=l+1)
+            mod_lrelu = LReLU(layer=l+1,resume=resume)
             mod_lrelu.slope = lrelu_slope
             mod.append(mod_lrelu)
         elif atypes[l-1] == 'tanh':
-            mod.append(Tanh(layer=l+1))
+            mod.append(Tanh(layer=l+1,resume=resume))
         elif atypes[l-1] == 'sigm':
-            mod.append(Sigmoid(layer=l+1))
+            mod.append(Sigmoid(layer=l+1,resume=resume))
         elif atypes[l-1] == 'sin':
-            mod.append(Sine(layer=l+1))
+            mod.append(Sine(layer=l+1,resume=resume))
         elif atypes[l-1] == 'lin':
-            mod.append(Identity(layer=l+1))
+            mod.append(Identity(layer=l+1,resume=resume))
         elif atypes[l-1] == 'sm':
-            mod.append(SoftMax(layer=l+1))
+            mod.append(SoftMax(layer=l+1,resume=resume))
         elif atypes[l-1][:6] == 'custom':
             mod.append(custom_atypes[atypes[l-1]])
 
         if l < L:
             if reg_fun == 'drop':
-                mod.append(DropNorm(p_drop=p_drop,rng=rng,layer=l+1))
+                mod.append(DropNorm(p_drop=p_drop,rng=rng,layer=l+1,resume=resume))
             elif reg_fun == 'bn':
-                mod.append(BatchNorm(n_layer[l-1],rng=rng,adam=adam,layer=l+1))
-            mod.append(Linear(n_layer[l-1],n_layer[l],rng=rng,adam=adam,layer=l+1))
+                mod.append(BatchNorm(n_layer[l-1],rng=rng,adam=adam,layer=l+1,resume=resume))
+            mod.append(Linear(n_layer[l-1],n_layer[l],rng=rng,adam=adam,layer=l+1,resume=resume))
         elif threshold is not None:
             mod[-1].threshold = threshold
 
+    mod = gen_filestems(mod,file_stem) # set file stems for each module
+    mod = initialize_modules(mod) # initialize weighted modules
+    
     return mod
 #################################

@@ -161,6 +161,8 @@ class Sequential(Module,MLUtilities,Utilities):
             -- params['n_layer']: list of L int, number of units in each layer. ** must have n_layer[-1] = y.shape[0] **
             -- params['atypes']: list of L str, activation type in each layer chosen from ['sigm','tanh','relu','lrelu','requ','splus','sin','sm','lin'] or 'custom...'.
                                  If 'custom...', then also define dictionary params['custom_atypes']
+            -- params['resume']: boolean, whether to resume/load from existing network or start afresh. Default False (i.e., start afresh)
+
             -- params['custom_atypes']: dictionary with keys matching 'custom...' entry in params['atypes']
                                         with items being activation module instances.
             -- params['loss_type']: str, loss function in ['square','hinge','nll','nllm'] or 'custom...'.
@@ -214,6 +216,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.p_drop = params.get('p_drop',0.5)
         self.wt_decay = params.get('wt_decay',0.0)
         self.decay_norm = int(params.get('decay_norm',2))
+        self.resume = params.get('resume',False)
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','net')
         self.verbose = params.get('verbose',True)
@@ -239,7 +242,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulate
-        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold,lrelu_slope=self.lrelu_slope)
+        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold,lrelu_slope=self.lrelu_slope,file_stem=self.file_stem,resume=self.resume)
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -565,10 +568,6 @@ class Sequential(Module,MLUtilities,Utilities):
     def save(self):
         """ Save current weights and setup params to file(s). """
         for m in self.modules:
-            m.file_stem = self.file_stem
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
         with open(self.file_stem + '.pkl', 'wb') as f:
             pickle.dump(self.params,f)
@@ -580,10 +579,6 @@ class Sequential(Module,MLUtilities,Utilities):
     def load(self):
         """ Load weights and setup params from file(s). """
         for m in self.modules:
-            m.file_stem = self.file_stem
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.load()
         with open(self.file_stem + '.pkl', 'rb') as f:
             self.params = pickle.load(f)
@@ -1256,6 +1251,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             -- params['decay_norm_w']: int, norm of weight decay coefficient, either 2 or 1 (default 2)
 
             ---- common
+            -- params['resume']: boolean, whether to resume/load from existing network or start afresh. Default False (i.e., start afresh)
             -- params['standardize_X']: boolean, whether or not to standardize training data features in train() (default True)
             -- params['standardize_Y']: boolean, whether or not to standardize training data labels in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
@@ -1298,6 +1294,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.adam = params.get('adam',True)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
+        self.resume = params.get('resume',False)
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','binet')
         self.verbose = params.get('verbose',True)
@@ -1326,8 +1323,8 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulate
-        self.modules_a = Modulate(self.n0a,self.n_layer_a,self.atypes_a,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_a,None)
-        self.modules_w = Modulate(self.n0w,self.n_layer_w,self.atypes_w,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_w,None)
+        self.modules_a = Modulate(self.n0a,self.n_layer_a,self.atypes_a,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_a,None,file_stem=self.file_stem+'_a',resume=self.resume)
+        self.modules_w = Modulate(self.n0w,self.n_layer_w,self.atypes_w,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_w,None,file_stem=self.file_stem+'_w',resume=self.resume)
         
         # set last activation module net_type
         self.modules_a[-1].net_type = self.net_type 
@@ -1672,18 +1669,10 @@ class BiSequential(Module,MLUtilities,Utilities):
         """ Save current weights and setup params to file(s). """
         # NNa
         for m in self.modules_a:
-            m.file_stem = self.file_stem + '_a'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
             
         # NNw
         for m in self.modules_w:
-            m.file_stem = self.file_stem + '_w'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
             
         # params dict
@@ -1697,18 +1686,10 @@ class BiSequential(Module,MLUtilities,Utilities):
         """ Load weights and setup params from file(s). """
         # NNa
         for m in self.modules_a:
-            m.file_stem = self.file_stem + '_a'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.load()
             
         # NNw
         for m in self.modules_w:
-            m.file_stem = self.file_stem + '_w'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.load()
             
         # params dict
@@ -1844,6 +1825,7 @@ class GAN(Module,MLUtilities,Utilities):
             -- params['clip']: float > 0, clipping parameter for use in Wasserstein GAN (default 0.01).
 
             ---- common
+            -- params['resume']: boolean, whether to resume/load from existing network or start afresh. Default False (i.e., start afresh)
             -- params['gan_type']: str, specify GAN type: one of ['minimax','modified','wasserstein'] (default 'modified')
             -- params['label_smoothing']: None or float in (0,0.5), amount of label smoothing to apply (default None)
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
@@ -1899,6 +1881,7 @@ class GAN(Module,MLUtilities,Utilities):
         self.lrelu_slope = params.get('lrelu_slope',1e-2)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
+        self.resume = params.get('resume',False)
         self.seed = params.get('seed',None)
         self.file_stem = params.get('file_stem','gan')
         self.verbose = params.get('verbose',True)
@@ -1927,8 +1910,8 @@ class GAN(Module,MLUtilities,Utilities):
             self.print_this("... GAN type: "+self.gan_type,self.logfile)
         
         # output of Modulate
-        self.modules_g = Modulate(self.n0ran,self.n_layer_g,self.atypes_g,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_g,None,lrelu_slope=self.lrelu_slope)
-        self.modules_d = Modulate(self.n0,self.n_layer_d,self.atypes_d,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_d,None,lrelu_slope=self.lrelu_slope)
+        self.modules_g = Modulate(self.n0ran,self.n_layer_g,self.atypes_g,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_g,None,lrelu_slope=self.lrelu_slope,file_stem=self.file_stem+'_gen',resume=self.resume)
+        self.modules_d = Modulate(self.n0,self.n_layer_d,self.atypes_d,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_d,None,lrelu_slope=self.lrelu_slope,file_stem=self.file_stem+'_disc',resume=self.resume)
 
         # set last activation module net_type
         self.modules_g[-1].net_type = self.net_type
@@ -2209,18 +2192,10 @@ class GAN(Module,MLUtilities,Utilities):
         """ Save current weights and setup params to file(s). """
         # G
         for m in self.modules_g:
-            m.file_stem = self.file_stem + '_gen'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
             
         # D
         for m in self.modules_d:
-            m.file_stem = self.file_stem + '_disc'
-            if m.is_norm:
-                m.file_stem += '_norm'
-            m.file_stem += '_layer{0:d}'.format(m.layer)
             m.save()
             
         # params dict
