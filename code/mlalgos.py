@@ -1627,6 +1627,10 @@ class BiSequential(Module,MLUtilities,Utilities):
                 self.status_bar(t,max_epoch)
             ################################
             
+        if self.verbose:
+            self.print_this("... saving training/validation loss history",self.logfile)
+        self.save_loss_history()
+            
         # load best network
         if self.verbose:
             self.print_this("... loading best network",self.logfile)
@@ -1724,6 +1728,41 @@ class BiSequential(Module,MLUtilities,Utilities):
             self.Y_mean = 0.0
         
         return
+    
+
+    def save_loss_history(self):
+        """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
+        
+        imax_trn = np.where(self.training_loss > 0.0)[0][-1]
+        imax_val = np.where(self.val_loss > 0.0)[0][-1]
+        imax = np.max([imax_trn,imax_val]) + 1
+        self.epochs = self.epochs[:imax]
+        self.training_loss = self.training_loss[:imax]
+        self.val_loss = self.val_loss[:imax]
+        
+        loss_history = {'epochs':self.epochs,'training_loss':self.training_loss,'val_loss':self.val_loss}
+        with open(self.file_stem + '_loss_history.pkl', 'wb') as f:
+            pickle.dump(loss_history,f)
+        
+        return
+        
+    def load_loss_history(self):
+        """ Load loss history from file."""
+        history_file = self.file_stem + '_loss_history.pkl'
+        if Path(history_file).is_file():
+            with open(history_file, 'rb') as f:
+                loss_history = pickle.load(f)
+        else:
+            if self.verbose:
+                self.print_this("... loss history doesn't exist, returning zeros",self.logfile)        
+            loss_history = {'epochs':np.zeros(1),'training_loss':np.zeros(1),'val_loss':np.zeros(1)}
+
+        self.epochs = loss_history['epochs']
+        self.training_loss = loss_history['training_loss']
+        self.val_loss = loss_history['val_loss']
+        
+        return loss_history
+    
 
     # to be called after generating/loading instance of BiSequential() with correct setup params.
     def extract_basis(self):
