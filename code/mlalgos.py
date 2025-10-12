@@ -8,6 +8,7 @@ from pathlib import Path
 
 #############################################
 class Perceptron(MLUtilities,Utilities):
+    #########################################
     def __init__(self,origin=False,init=None,avg=False,verbose=True,hook=None,logfile=None):
         """ Perceptron algorithm.
             origin: whether to classify through origin (True) or include offset (False, default)
@@ -29,8 +30,10 @@ class Perceptron(MLUtilities,Utilities):
             self.origin = False
 
         self.train = self.avg_perceptron if self.avg else self.perceptron 
+    #########################################
 
         
+    #########################################
     def perceptron(self,X,Y,params={}):
         """ Perceptron algorithm.
             X: (d,n) array for n data points in d dimensions
@@ -97,8 +100,10 @@ class Perceptron(MLUtilities,Utilities):
         if self.verbose:
             self.print_this('\nmistakes: {0:d}'.format(mistakes),self.logfile)
         return 
+    #########################################
 
     
+    #########################################
     def avg_perceptron(self,X,Y,params={}):
         """ Averaged Perceptron algorithm.
             X: (d,n) array for n data points in d dimensions
@@ -145,6 +150,7 @@ class Perceptron(MLUtilities,Utilities):
 
     def predict(self,X):
         return self.positive(X,self.W,self.W0)
+    #########################################
     
 #############################################
 
@@ -153,6 +159,7 @@ class Perceptron(MLUtilities,Utilities):
 # Main gradient descent (Sequential) module
 #################
 class Sequential(Module,MLUtilities,Utilities):
+    #########################################
     def __init__(self,params={}):
         """ Main class to implement gradient descent for feed-forward neural network with error back-propagation.
             params should be dictionary with a subset of following keys:
@@ -271,7 +278,9 @@ class Sequential(Module,MLUtilities,Utilities):
             
         self.net_type = 'reg' if self.loss_type == 'square' else 'class'
         self.modules[-1].net_type = self.net_type # set last activation module net_type
+    #########################################
 
+    #########################################
     def check_init(self):
         """ Run various self-consistency checks at initialization. """
 
@@ -339,23 +348,31 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning!: lrelu_slope must be in range (-1,1) in Sequential(). Setting to +1e-2.")
             self.lrelu_slope = 1e-2
+    #########################################
             
 
+    #########################################
     def forward(self,Xt): # update activations
         for m in self.modules:
             Xt = m.forward(Xt)
         return Xt
+    #########################################
 
+    #########################################
     def backward(self,delta): # update gradients
         for m in self.modules[-2::-1]:
             # reverse order, skip first module (i.e. last activation) since loss.backward gives dLdZ^last
             delta = m.backward(delta)
+    #########################################
             
+    #########################################
     def sgd_step(self,t,lrate): # update weights (GD update)
         for m in self.modules:
             m.sgd_step(t,lrate,wt_decay=self.wt_decay,decay_norm=self.decay_norm)
         return
+    #########################################
 
+    #########################################
     def calc_loss_decay(self):
         decay_loss = 0.0
         if self.decay_norm == 2:
@@ -366,7 +383,9 @@ class Sequential(Module,MLUtilities,Utilities):
                 decay_loss += np.sum(np.fabs(m.W)) if m.W is not None else 0.0
         decay_loss *= self.wt_decay
         return decay_loss
+    #########################################
 
+    #########################################
     def train(self,X,Y,params={}):
         """ Main routine for training.
             Expect X.shape = (n0,n_samp), Y.shape = (n_layer[-1],n_samp)
@@ -531,7 +550,10 @@ class Sequential(Module,MLUtilities,Utilities):
             self.print_this("... ... done",self.logfile)
             
         return
+    #########################################
 
+    
+    #########################################
     def predict(self,X):
         """ Predict targets for given data set. """
         if X.shape[0] != self.n0:
@@ -550,7 +572,10 @@ class Sequential(Module,MLUtilities,Utilities):
             # convert 0 to -1 if needed.
             Ypred[Ypred < 1e-4] = -1.0
         return Ypred
+    #########################################
+
     
+    #########################################
     def gradient(self,X):
         """ Calculate gradient of output wrt input.
             Expect X.shape = (n0,n_samp)
@@ -564,7 +589,10 @@ class Sequential(Module,MLUtilities,Utilities):
             # undo standardization
             dYdX *= (self.Y_std + 1e-15)
         return dYdX
+    #########################################
 
+    
+    #########################################
     def save(self):
         """ Save current weights and setup params to file(s). """
         for m in self.modules:
@@ -573,9 +601,12 @@ class Sequential(Module,MLUtilities,Utilities):
             pickle.dump(self.params,f)
             
         return    
+    #########################################
 
+    #########################################
     # to be called after generating instance of Sequential() with correct setup params,
     # e.g. after invoking self.save() or after call to load method of BuildNN().
+    #########################################
     def load(self):
         """ Load weights and setup params from file(s). """
         for m in self.modules:
@@ -611,7 +642,9 @@ class Sequential(Module,MLUtilities,Utilities):
             self.Y_mean = 0.0
             
         return
+    #########################################
 
+    #########################################
     def save_loss_history(self):
         """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
         
@@ -620,7 +653,9 @@ class Sequential(Module,MLUtilities,Utilities):
             pickle.dump(loss_history,f)
         
         return
+    #########################################
         
+    #########################################
     def load_loss_history(self):
         """ Load loss history from file."""
         history_file = self.file_stem + '_loss_history.pkl'
@@ -637,8 +672,45 @@ class Sequential(Module,MLUtilities,Utilities):
         self.val_loss = loss_history['val_loss']
         
         return loss_history 
+    #########################################
     
+    #########################################
     # to be called after generating/loading instance of Sequential() with correct setup params.
+    #########################################
+    def extract_hidden_features(self,layer=None):
+        """ Extract specified layer of NN as collection of functions. 
+            -- layer: int, index of hidden layer to extract. Default None (penultimate layer, same as self.extract_basis).
+        """
+        if self.verbose:
+            self.print_this("... extracting hidden features",self.logfile)
+            
+        params_setup = copy.deepcopy(self.params)
+        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key.
+        
+        if layer is None:
+            layer = params_setup['L']-1
+
+        if (layer <= 0) | (layer >= params_setup['L']):
+            raise Exception("Need 1 <= layer <= {0:d} or layer=None in Sequential.extract_hidden_features().".format(params_setup['L']-1))
+            
+        if self.verbose:
+            self.print_this("... ... hidden layer {0:d} will be extracted".format(layer),self.logfile)
+
+        for l in range(params_setup['L'],layer,-1):
+            params_setup['L'] -= 1
+            params_setup['n_layer'].pop(-1)
+            params_setup['atypes'].pop(-1)
+            
+        hidden = Sequential(params=params_setup)
+        for m in range(len(hidden.modules)):
+            hidden.modules[m] = copy.deepcopy(self.modules[m])
+            
+        return hidden
+    #########################################
+    
+    #########################################
+    # to be called after generating/loading instance of Sequential() with correct setup params.
+    #########################################
     def extract_basis(self):
         """ Extract penultimate layer of NN as collection of basis functions. """
         if self.verbose:
@@ -652,8 +724,11 @@ class Sequential(Module,MLUtilities,Utilities):
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules[m])
         return basis
+    #########################################
 
+    #########################################
     # to be called after invoking self.extract_basis()
+    #########################################
     def combine_basis(self,basis,X):
         """ Simple wrapper to quickly test basis extraction by combining as per last layer of NN.
             -- basis: Sequential instance created by self.extract_basis
@@ -667,7 +742,9 @@ class Sequential(Module,MLUtilities,Utilities):
             A *= self.Y_std
             A += self.Y_mean
         return A
+    #########################################
 
+    #########################################
     def calc_N_freeparams(self):
         """ Utility to calculate number of free parameters being optimized. """
         N = 0
@@ -675,6 +752,7 @@ class Sequential(Module,MLUtilities,Utilities):
             n_lm1 = 1*self.n0 if l==0 else 1*self.n_layer[l-1]
             N += self.n_layer[l]*(n_lm1 + 1)
         return N
+    #########################################
     
 #################################
 
@@ -684,7 +762,7 @@ class Sequential(Module,MLUtilities,Utilities):
 #################
 class BuildNN(Module,MLUtilities,Utilities):
     """ Systematically build and train feed-forward NN for given set of data and targets. """
-    #############################
+    #########################################
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize_X=True,standardize_Y=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=None,loss_type='square',test_type='perc',htypes=None,
@@ -1089,6 +1167,7 @@ class BuildNN(Module,MLUtilities,Utilities):
 
 #################################
 class NetworkEnsembleObject(MLUtilities,Utilities):
+    #########################################
     def __init__(self,ensemble_dir='./',verbose=True,logfile=None):
         """ Class to load collection of Sequential instances as an ensemble of trained networks.
             -- ensemble_dir: path to folder containing stored instances of mutually compatible networks, e.g. as result of BuildNN.trainNN call.
@@ -1106,7 +1185,9 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         self.ensemble = {} # will be updated by self.load as dictionary of Sequential instances and their teststats and training params.
         if self.verbose:
             self.print_this("NetworkEnsembleObject initialized",self.logfile)
+    #########################################
 
+    #########################################
     def load(self):
         if self.verbose:
             self.print_this("... ... initializing dict self.ensemble",self.logfile)
@@ -1173,7 +1254,9 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             self.print_this("... ensemble loaded and checked",self.logfile)
             
         return
+    #########################################
 
+    #########################################
     def predict(self,X):
         if len(self.keys) == 0:
             raise Exception("prediction can only happen after ensemble is loaded.")
@@ -1210,6 +1293,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 Ypred[Ypred < 1e-4] = -1.0
             
         return Ypred
+    #########################################
         
 #################################
 
@@ -1218,6 +1302,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
 # BiSequential module for basis function training
 #################
 class BiSequential(Module,MLUtilities,Utilities):
+    #########################################
     def __init__(self,params={}):
         """ Class to implement gradient descent for feed-forward neural network with error back-propagation,
             specialized for basis function extraction in function approximation problems.
@@ -1362,8 +1447,10 @@ class BiSequential(Module,MLUtilities,Utilities):
                                 self.logfile)
             else:
                 self.print_this("... ... not using any weight decay in NNw",self.logfile)
+    #########################################
 
 
+    #########################################
     def check_init(self):
         """ Run various self-consistency checks at initialization. """
 
@@ -1425,44 +1512,60 @@ class BiSequential(Module,MLUtilities,Utilities):
             self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
 
         return
+    #########################################
 
+    #########################################
     def forward_a(self,Xt): # update activations
         for m in self.modules_a:
             Xt = m.forward(Xt)
         return Xt
+    #########################################
 
+    #########################################
     def forward_w(self,Xt): # update activations
         for m in self.modules_w:
             Xt = m.forward(Xt)
         return Xt
+    #########################################
 
+    #########################################
     def forward(self,X):
         apred = self.forward_a(X[self.n0w:,:])
         apred = np.concatenate((np.ones((1,apred.shape[1])),apred),axis=0) # (n_layer_w[-1],n_samp) 
         wpred = self.forward_w(X[:self.n0w,:])
         Ypred = np.sum(apred*wpred,axis=0,keepdims=True) # (1,n_samp)
         return Ypred,apred,wpred
+    #########################################
 
+    #########################################
     def backward_a(self,delta): # update gradients
         for m in self.modules_a[::-1]:
             # reverse order, expect first input = dL/dAa_La
             delta = m.backward(delta)
+    #########################################
 
+    #########################################
     def backward_w(self,delta): # update gradients
         for m in self.modules_w[::-1]:
             # reverse order, expect first input = dL/dAw_Lw
             delta = m.backward(delta)
+    #########################################
 
+    #########################################
     # choice 1: single routine performing both steps (with possibly different lrates).
     #           must be used in single batch of varying x,theta combinations
+    #########################################
     def sgd_step(self,t,lrate_a,lrate_w): # update weights (GD update)
         for m in self.modules_a:
             m.sgd_step(t,lrate_a,wt_decay=self.wt_decay_a,decay_norm=self.decay_norm_a)
         for m in self.modules_w:
             m.sgd_step(t,lrate_w,wt_decay=self.wt_decay_w,decay_norm=self.decay_norm_w)
         return
+    #########################################
 
+    #########################################
     # # choice 2: separate routines for each sgd step. can be used in mini batches varying x and theta separately
+    #########################################
     # def sgd_step_a(self,t,lrate): # update weights (GD update)
     #     for m in self.modules_a:
     #         m.sgd_step(t,lrate,wt_decay=self.wt_decay_a,decay_norm=self.decay_norm_a)
@@ -1471,7 +1574,9 @@ class BiSequential(Module,MLUtilities,Utilities):
     #     for m in self.modules_w:
     #         m.sgd_step(t,lrate,wt_decay=self.wt_decay_w,decay_norm=self.decay_norm_w)
     #     return
+    #########################################
 
+    #########################################
     def calc_loss_decay(self):
         decay_loss_a = 0.0
         if self.decay_norm_a == 2:
@@ -1492,7 +1597,9 @@ class BiSequential(Module,MLUtilities,Utilities):
         decay_loss_w *= self.wt_decay_w
         
         return decay_loss_a+decay_loss_w
+    #########################################
 
+    #########################################
     def train(self,X,Y,params={}):
         """ Main routine for training.
             Expect X.shape = (n0w+n0a,n_samp), Y.shape = (1,n_samp)
@@ -1656,7 +1763,10 @@ class BiSequential(Module,MLUtilities,Utilities):
             self.print_this("... ... done",self.logfile)
             
         return
+    #########################################
 
+    
+    #########################################
     def predict(self,X):
         """ Predict targets for given data set. """
         if X.shape[0] != self.n0w+self.n0a:
@@ -1668,7 +1778,10 @@ class BiSequential(Module,MLUtilities,Utilities):
             Ypred *= (self.Y_std + 1e-15)
             Ypred += self.Y_mean
         return Ypred
+    #########################################
 
+    
+    #########################################
     def save(self):
         """ Save current weights and setup params to file(s). """
         # NNa
@@ -1684,8 +1797,11 @@ class BiSequential(Module,MLUtilities,Utilities):
             pickle.dump(self.params,f)
             
         return    
+    #########################################
 
+    #########################################
     # to be called after generating instance of BiSequential() with correct setup params, e.g. after invoking self.save() 
+    #########################################
     def load(self):
         """ Load weights and setup params from file(s). """
         # NNa
@@ -1728,8 +1844,9 @@ class BiSequential(Module,MLUtilities,Utilities):
             self.Y_mean = 0.0
         
         return
+    #########################################
     
-
+    #########################################
     def save_loss_history(self):
         """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
         
@@ -1745,7 +1862,9 @@ class BiSequential(Module,MLUtilities,Utilities):
             pickle.dump(loss_history,f)
         
         return
+    #########################################
         
+    #########################################
     def load_loss_history(self):
         """ Load loss history from file."""
         history_file = self.file_stem + '_loss_history.pkl'
@@ -1762,9 +1881,12 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.val_loss = loss_history['val_loss']
         
         return loss_history
+    #########################################
     
 
+    #########################################
     # to be called after generating/loading instance of BiSequential() with correct setup params.
+    #########################################
     def extract_basis(self):
         """ Extract output of NNa as collection of basis functions. Returns instance of Sequential. """
         if self.verbose:
@@ -1778,9 +1900,12 @@ class BiSequential(Module,MLUtilities,Utilities):
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules_a[m])
         return basis
+    #########################################
 
 
+    #########################################
     # to be called after generating/loading instance of BiSequential() with correct setup params.
+    #########################################
     def extract_coeffs(self):
         """ Extract output of NNw as collection of coefficients. Returns instance of Sequential. """
         if self.verbose:
@@ -1797,7 +1922,9 @@ class BiSequential(Module,MLUtilities,Utilities):
 
         # note that result needs to be modified in case original standardization is True. see examples/BiSequential.ipynb.
         return coeffs
+    #########################################
 
+    #########################################
     def calc_N_freeparams(self):
         """ Utility to calculate number of free parameters being optimized. """
         N = 0
@@ -1810,6 +1937,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             N += self.n_layer_w[l]*(n_lm1 + 1)
             
         return N
+    #########################################
     
 #################################
 
@@ -1818,6 +1946,7 @@ class BiSequential(Module,MLUtilities,Utilities):
 # Generative adversarial network (using Sequential instances for now)
 #################
 class GAN(Module,MLUtilities,Utilities):
+    #########################################
     def __init__(self,params={}):
         """ Class to implement gradient descent/ascent using error back-propagation for
             a generative adversarial network (GAN) constructed using two Sequential instances,
@@ -2011,12 +2140,16 @@ class GAN(Module,MLUtilities,Utilities):
                 self.print_this("... ... no noise will be added to inputs while training",self.logfile)
                 
             self.print_this("... setup complete",self.logfile)
+    #########################################
 
 
+    #########################################
     def noise_prior(self,d0,d1):
         # give this to user control eventually
         return self.rng.randn(d0,d1)
+    #########################################
 
+    #########################################
     def check_init(self):
         """ Run various self-consistency checks at initialization. """
 
@@ -2135,37 +2268,51 @@ class GAN(Module,MLUtilities,Utilities):
                 self.noise = None
             
         return
+    #########################################
 
+    #########################################
     def forward_d(self,Xt): # update activations
         for m in self.modules_d:
             Xt = m.forward(Xt)
         return Xt
+    #########################################
 
+    #########################################
     def forward_g(self,Xt): # update activations
         for m in self.modules_g:
             Xt = m.forward(Xt)
         return Xt
+    #########################################
 
+    #########################################
     def backward_d(self,delta,start=-2): # update gradients
         for m in self.modules_d[start::-1]:
             # reverse order, expect first input = dL/dZd when start=-2, dL/dAd when start=-1
             delta = m.backward(delta)
+    #########################################
 
+    #########################################
     def backward_g(self,delta): # update gradients
         for m in self.modules_g[-1::-1]:
             # reverse order, always expect first input = dL/dAg
             delta = m.backward(delta)
+    #########################################
 
+    #########################################
     def sgd_step_d(self,t,lrate): # update weights (GD update)
         for m in self.modules_d:
             m.sgd_step(t,lrate,wt_decay=self.wt_decay_d,decay_norm=self.decay_norm_d)
         return
+    #########################################
     
+    #########################################
     def sgd_step_g(self,t,lrate): # update weights (GD update)
         for m in self.modules_g:
             m.sgd_step(t,lrate,wt_decay=self.wt_decay_g,decay_norm=self.decay_norm_g)
         return
+    #########################################
 
+    #########################################
     def calc_loss_decay(self,net_str):
         decay_loss = 0.0
         if net_str == 'd':
@@ -2186,8 +2333,10 @@ class GAN(Module,MLUtilities,Utilities):
             decay_loss *= self.wt_decay_g
         
         return decay_loss
+    #########################################
 
 
+    #########################################
     def gradient_d(self,X):
         """ Calculate gradient of discriminator D wrt input X.
             Expect X.shape = (n0,b)
@@ -2199,7 +2348,9 @@ class GAN(Module,MLUtilities,Utilities):
             dDdX = m.backward(dDdX,grad=True)
         
         return dDdX
+    #########################################
     
+    #########################################
     def generate(self,Z):
         """ Generate targets for given noise realization. """
         if Z.shape[0] != self.n0ran:
@@ -2218,7 +2369,9 @@ class GAN(Module,MLUtilities,Utilities):
             G += self.X_mean
 
         return G
+    #########################################
 
+    #########################################
     def discriminate(self,X):
         """ Estimate probability that input is from target distribution rather than generated by G. """
         if X.shape[0] != self.n0:
@@ -2226,7 +2379,9 @@ class GAN(Module,MLUtilities,Utilities):
         # update all activations and generate.
         D = self.forward_d(X)
         return D
+    #########################################
     
+    #########################################
     def save(self):
         """ Save current weights and setup params to file(s). """
         # G
@@ -2242,8 +2397,11 @@ class GAN(Module,MLUtilities,Utilities):
             pickle.dump(self.params,f)
             
         return    
+    #########################################
 
+    #########################################
     # to be called after generating instance of GAN() with correct setup params, e.g. after invoking self.save() 
+    #########################################
     def load(self):
         """ Load weights and setup params from file(s). """
         # G
@@ -2272,8 +2430,10 @@ class GAN(Module,MLUtilities,Utilities):
             self.X_mean = self.params['X_mean']
         
         return
+    #########################################
 
     
+    #########################################
     def calc_N_freeparams(self):
         """ Utility to calculate number of free parameters being optimized. """
         N = 0
@@ -2286,8 +2446,10 @@ class GAN(Module,MLUtilities,Utilities):
             N += self.n_layer_d[l]*(n_lm1 + 1)
             
         return N
+    #########################################
 
     
+    #########################################
     def train(self,X,params={}):
         """ Main routine for training. 
             Expect training sample X.shape = (n0,n_samp) = Z.shape
@@ -2544,379 +2706,7 @@ class GAN(Module,MLUtilities,Utilities):
             self.print_this("... ... done",self.logfile)
             
         return
-
-    
-    # def train_old(self,X,params={}):
-    #     """ Main routine for training. 
-    #         Expect training sample X.shape = (n0,n_samp) = Z.shape
-    #         params should be dictionary with keywords:
-    #         -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
-    #         -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
-    #         -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
-    #         -- 'val_frac': float, fraction of input data to use for validation
-    #         -- 'mb_count': None or int >= 1, number of mini-batches. If None (default), will be set to int(sqrt(X.shape[1]*(1-val_frac))) 
-    #         -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
-    #     """
-    #     max_epoch_d = params.get('max_epoch_d',1)
-    #     max_epoch_g = params.get('max_epoch_g',100)
-    #     lrate_d = params.get('lrate_d',0.005)
-    #     lrate_g = params.get('lrate_g',0.005)
-    #     mb_count = params.get('mb_count',None)
-    #     val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
-    #     check_after = params.get('check_after',10)
-        
-    #     if self.verbose:
-    #         self.print_this("... training",self.logfile)
-            
-    #     d,n_samp = X.shape
-
-    #     if d != self.n0:
-    #         raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
-
-    #     n_val = np.rint(val_frac*n_samp).astype(int)
-    #     n_samp -= n_val        
-
-    #     if n_val > 0:
-    #         ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
-    #         ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
-    #     else:
-    #         ind_train = np.arange(X.shape[1])
-
-    #     X_train = X[:,ind_train].copy()
-    #     if n_val > 0:
-    #         X_val = X[:,ind_val].copy()
-            
-    #     if self.standardize:
-    #         self.X_std = np.std(X,axis=1)
-    #         self.X_mean = np.mean(X,axis=1)
-    #         self.params['X_std'] = self.X_std
-    #         self.params['X_mean'] = self.X_mean
-    #         X_train -= self.X_mean
-    #         X_train /= (self.X_std + 1e-15)
-    #         if self.use_tanh:
-    #             # additional tanh standardization so that values in (-1,1)
-    #             X_train = np.tanh(X_train)
-    #         elif self.use_sigm:
-    #             # additional sigmoid standardization so that values in (0,1)
-    #             X_train = 1/(1+np.exp(-X_train))
-    #         if n_val > 0:
-    #             X_val -= self.X_mean
-    #             X_val /= (self.X_std + 1e-15)
-    #             if self.use_tanh:
-    #                 # additional tanh standardization so that values in (-1,1)
-    #                 X_val = np.tanh(X_val)
-    #             elif self.use_sigm:
-    #                 # additional sigmoid standardization so that values in (0,1)
-    #                 X_val = 1/(1+np.exp(-X_val))
-
-    #     if mb_count is None:
-    #         if self.verbose:
-    #             print_str = "... no mb_count specified. Setting to int(sqrt(n_samp))."
-    #             self.print_this(print_str,self.logfile)
-    #         mb_count = int(np.sqrt(n_samp))
-    #     else:
-    #         if (mb_count > n_samp) | (mb_count < 1):
-    #             if self.verbose:
-    #                 self.print_this("... incompatible mb_count in GAN.train(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
-    #                                 self.logfile)
-    #             mb_count = n_samp
-    #         if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
-    #             if self.verbose:
-    #                 print_str = "... large mb_count might lead to uneven mini-batch sizes in GAN.train()."
-    #                 print_str += " Setting to int(sqrt(n_samp))."
-    #                 self.print_this(print_str,self.logfile)
-    #             mb_count = int(np.sqrt(n_samp))
-            
-    #     mb_size = n_samp // mb_count
-
-    #     self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
-    #     self.disc_loss = np.zeros(max_epoch_g*max_epoch_d)
-    #     self.epochs = np.arange(max_epoch_g)+1.0
-    #     self.gen_loss = np.zeros(max_epoch_g)
-    #     ind_shuff = np.arange(n_samp)
-    #     for t in range(max_epoch_g):
-    #         ###########################
-    #         # outer loop for training G
-    #         for k in range(max_epoch_d):
-    #             ###########################
-    #             # inner loop for training D
-    #             self.rng.shuffle(ind_shuff)
-    #             X_train_shuff = X_train[:,ind_shuff].copy()
-    #             for b in range(mb_count):
-    #                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]
-                    
-    #                 # update activations, calculate D loss gradients and perform gradient update for actual data mini-batch
-    #                 data = X_train_shuff[:,sl].copy()
-    #                 D_x = self.forward_d(data)
-    #                 batch_loss = self.loss.forward(D_x,np.ones_like(D_x))
-    #                 dLdZdd = self.loss.backward()
-    #                 self.backward_d(dLdZdd) 
-    #                 # gradient descent update for D (will account for weight decay if requested)
-    #                 self.sgd_step_d(t,lrate_d) 
-                    
-    #                 # update activations, calculate D loss gradients and perform gradient update for randoms mini-batch
-    #                 random = self.noise_prior(self.n0ran,data.shape[1])
-    #                 G = self.forward_g(random)
-    #                 D_Gz = self.forward_d(G)
-    #                 batch_loss += self.loss.forward(D_Gz,np.zeros_like(D_Gz))
-    #                 dLdZdg = self.loss.backward()
-    #                 self.backward_d(dLdZdg) 
-    #                 # gradient descent update for D (will account for weight decay if requested)
-    #                 self.sgd_step_d(t,lrate_d) 
-
-    #                 if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
-    #                     batch_loss += self.calc_loss_decay()
-    #                 self.disc_loss[k + t*max_epoch_d] += batch_loss/mb_count
-
-    #             # end inner loop
-    #             ###########################
-    #         # perform single G update
-    #         random = self.noise_prior(self.n0ran,mb_size) 
-
-    #         # update activations and calculate G loss gradients for randoms mini-batch
-    #         G = self.forward_g(random)
-    #         D_Gz = self.forward_d(G)
-    #         Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
-    #         if self.gan_type == 'minimax':
-    #             D_Gz = 1 - D_Gz
-    #         elif self.gan_type == 'wasserstein':
-    #             raise NotImplementedError("'wasserstein' not implemented yet!")
-    #         dLdZg = -1.0*np.squeeze(Dprime_Gz/(D_Gz + 1e-15),axis=1) # (n0,b)
-    #         self.backward_g(dLdZg) 
-
-    #         # gradient descent update for G (will account for weight decay if requested)
-    #         self.sgd_step_g(t,lrate_g) 
-                
-    #         ######### NEED TO THINK ABOUT VALIDATION CHECK #############
-    #         ##### (recall 'loss' is not simply to be minimized) ########
-    #         # # validation check
-    #         # if n_val > 0:
-    #         #     # update activations. prediction for validation data
-    #         #     D_x_val = self.forward_d(X_val)
-    #         #     random = self.noise_prior(self.n0ran,X_val.shape[1]) # so noise changes in every validation step
-    #         #     G_val = self.forward_g(random)
-    #         #     D_Gz_val = self.forward_d(G_val)
-                
-    #         #     # calculate validation loss
-    #         #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
-    #         #     if (self.wt_decay_g > 0.0):
-    #         #         val_loss += self.calc_loss_decay()
-    #         #     self.val_loss[t] = val_loss
-                
-    #         #     if t > check_after:
-    #         #         x = np.arange(t-check_after,t+1)
-    #         #         y = self.val_loss[x].copy()
-    #         #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
-    #         #             if self.verbose:
-    #         #                 self.print_this('',self.logfile)
-    #         #             break
-            
-    #         if self.verbose:
-    #             self.status_bar(t,max_epoch_g)
-    #         # end outer loop
-    #         ###########################
-
-    #     if self.reg_fun == 'drop':
-    #         if self.verbose:
-    #             self.print_this("... correcting for drop regularization",self.logfile)
-    #         # convert DropNorm layers to effectively Identity
-    #         for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-    #             m.drop = False
-    #         for m in self.modules_g[2::3]: 
-    #             m.drop = False
-                
-    #         # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
-    #         # biases untouched.
-    #         for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-    #             m.W *= (1-self.p_drop)
-    #         for m in self.modules_g[::3]: 
-    #             m.W *= (1-self.p_drop)
-                
-    #     if self.verbose:
-    #         self.print_this("... ... done",self.logfile)
-            
-    #     return
-
-    # def train(self,X,params={}):
-    #     """ Main routine for training. 
-    #         Expect training sample X.shape = (n0,n_samp) = Z.shape
-    #         params should be dictionary with keywords:
-    #         -- 'max_epoch_d': int >= 1, max epoch for discriminator D training at fixed generator G (default 1)
-    #         -- 'max_epoch_g': int >= 1, max epoch for generator G training (default 100)
-    #         -- 'lrate_d','lrate_g': float, learning rates for D and G (default 0.005)
-    #         -- 'val_frac': float, fraction of input data to use for validation
-    #         -- 'mb_count': None or int >= 1, number of mini-batches. If None (default), will be set to int(sqrt(X.shape[1]*(1-val_frac))) 
-    #         -- 'chck_after': int >= 1, number of G-training epochs after which to apply validation check (default 10)
-    #     """
-    #     max_epoch_d = params.get('max_epoch_d',1)
-    #     max_epoch_g = params.get('max_epoch_g',100)
-    #     lrate_d = params.get('lrate_d',0.005)
-    #     lrate_g = params.get('lrate_g',0.005)
-    #     mb_count = params.get('mb_count',None)
-    #     val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
-    #     check_after = params.get('check_after',10)
-        
-    #     if self.verbose:
-    #         self.print_this("... training",self.logfile)
-            
-    #     d,n_samp = X.shape
-
-    #     if d != self.n0:
-    #         raise TypeError("Incompatible data dimension in GAN.train(). Expecting {0:d}+{1:d}, got {2:d}".format(self.n0w,self.n0a,d))
-
-    #     n_val = np.rint(val_frac*n_samp).astype(int)
-    #     n_samp -= n_val        
-
-    #     if n_val > 0:
-    #         ind_val = self.rng.choice(X.shape[1],size=n_val,replace=False)
-    #         ind_train = np.delete(np.arange(X.shape[1]),ind_val) # Note ind_train is ordered although ind_val is randomised
-    #     else:
-    #         ind_train = np.arange(X.shape[1])
-
-    #     X_train = X[:,ind_train].copy()
-    #     if n_val > 0:
-    #         X_val = X[:,ind_val].copy()
-            
-    #     if self.standardize:
-    #         self.X_std = np.std(X,axis=1)
-    #         self.X_mean = np.mean(X,axis=1)
-    #         self.params['X_std'] = self.X_std
-    #         self.params['X_mean'] = self.X_mean
-    #         X_train -= self.X_mean
-    #         X_train /= (self.X_std + 1e-15)
-    #         # # additional tanh standardization so that values in (-1,1)
-    #         # X_train = np.tanh(X_train)
-    #         if n_val > 0:
-    #             X_val -= self.X_mean
-    #             X_val /= (self.X_std + 1e-15)
-    #             # # additional tanh standardization so that values in (-1,1)
-    #             # X_val = np.tanh(X_val)
-
-    #     if mb_count is None:
-    #         if self.verbose:
-    #             print_str = "... no mb_count specified. Setting to int(sqrt(n_samp))."
-    #             self.print_this(print_str,self.logfile)
-    #         mb_count = int(np.sqrt(n_samp))
-    #     else:
-    #         if (mb_count > n_samp) | (mb_count < 1):
-    #             if self.verbose:
-    #                 self.print_this("... incompatible mb_count in GAN.train(). Setting to n_samp = {0:d} (standard SGD).".format(n_samp),
-    #                                 self.logfile)
-    #             mb_count = n_samp
-    #         if (mb_count < n_samp) & (mb_count > np.sqrt(n_samp)):
-    #             if self.verbose:
-    #                 print_str = "... large mb_count might lead to uneven mini-batch sizes in GAN.train()."
-    #                 print_str += " Setting to int(sqrt(n_samp))."
-    #                 self.print_this(print_str,self.logfile)
-    #             mb_count = int(np.sqrt(n_samp))
-            
-    #     mb_size = n_samp // mb_count
-
-    #     self.epochs_all = np.arange(max_epoch_g*max_epoch_d)+1.0
-    #     self.training_loss = np.zeros(max_epoch_g*max_epoch_d)
-    #     self.epochs = np.arange(max_epoch_g)+1.0
-    #     self.val_loss = np.zeros(max_epoch_g)
-    #     ind_shuff = np.arange(n_samp)
-    #     for t in range(max_epoch_g):
-    #         ###########################
-    #         # outer loop for training G
-    #         for k in range(max_epoch_d):
-    #             ###########################
-    #             # inner loop for training D
-    #             self.rng.shuffle(ind_shuff)
-    #             X_train_shuff = X_train[:,ind_shuff].copy()
-    #             for b in range(mb_count):
-    #                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
-    #                 data = X_train_shuff[:,sl].copy()
-    #                 random = self.noise_prior(self.n0ran,data.shape[1])
-
-    #                 # note no issues calling loss.backward_** before loss.forward since LossGAN doesn't store/update any internal attributes
-                    
-    #                 # update activations and calculate D loss gradients for mini-batch
-    #                 D_x = self.forward_d(data)
-    #                 dLdZdd = self.loss.backward_dd(D_x) # will account for sign to ensure ascent instead of descent
-
-    #                 G = self.forward_g(random)
-    #                 D_Gz = self.forward_d(G)
-    #                 dLdZdg = self.loss.backward_dg(D_Gz) # will account for sign to ensure ascent instead of descent
-
-    #                 # loss calculation
-    #                 batch_loss = self.loss.forward(D_x,D_Gz) # calculate current batch loss
-    #                 if (self.wt_decay_d > 0.0) | (self.wt_decay_g > 0.0):
-    #                     batch_loss += self.calc_loss_decay()
-    #                 self.training_loss[k + t*max_epoch_d] += batch_loss/mb_count
-
-    #                 # back-propagation: update D gradients using ascent
-    #                 self.backward_d(dLdZdd + dLdZdg) 
-
-    #                 # gradient descent update for D (will account for weight decay if requested)
-    #                 self.sgd_step_d(t,lrate_d) 
-    #             # end inner loop
-    #             ###########################
-    #         for b in range(mb_count):
-    #             random = self.noise_prior(self.n0ran,mb_size) # may not match with inner loop for last mini-batch, but not an issue
-
-    #             # update activations and calculate G loss gradients for mini-batch
-    #             G = self.forward_g(random)
-    #             D_Gz = self.forward_d(G)
-    #             Dprime_Gz = self.gradient_d(D_Gz) # (n0,1,b)
-    #             dLdZg = self.loss.backward_g(D_Gz,Dprime_Gz) 
-
-    #             # back-propagation: update G gradients using descent
-    #             self.backward_g(dLdZg) 
-                
-    #             # gradient descent update for G (will account for weight decay if requested)
-    #             self.sgd_step_g(t,lrate_g) 
-                
-    #         ######### NEED TO THINK ABOUT VALIDATION CHECK #############
-    #         ##### (recall 'loss' is not simply to be minimized) ########
-    #         # # validation check
-    #         # if n_val > 0:
-    #         #     # update activations. prediction for validation data
-    #         #     D_x_val = self.forward_d(X_val)
-    #         #     random = self.noise_prior(self.n0ran,X_val.shape[1]) # so noise changes in every validation step
-    #         #     G_val = self.forward_g(random)
-    #         #     D_Gz_val = self.forward_d(G_val)
-                
-    #         #     # calculate validation loss
-    #         #     val_loss = self.loss.forward(D_x_val,D_Gz_val)
-    #         #     if (self.wt_decay_g > 0.0):
-    #         #         val_loss += self.calc_loss_decay()
-    #         #     self.val_loss[t] = val_loss
-                
-    #         #     if t > check_after:
-    #         #         x = np.arange(t-check_after,t+1)
-    #         #         y = self.val_loss[x].copy()
-    #         #         if np.mean(x*y)-np.mean(x)*np.mean(y) > 0.0: # check for positive sign of best fit slope
-    #         #             if self.verbose:
-    #         #                 self.print_this('',self.logfile)
-    #         #             break
-            
-    #         if self.verbose:
-    #             self.status_bar(t,max_epoch_g)
-    #         # end outer loop
-    #         ###########################
-
-    #     if self.reg_fun == 'drop':
-    #         if self.verbose:
-    #             self.print_this("... correcting for drop regularization",self.logfile)
-    #         # convert DropNorm layers to effectively Identity
-    #         for m in self.modules_d[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-    #             m.drop = False
-    #         for m in self.modules_g[2::3]: 
-    #             m.drop = False
-                
-    #         # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
-    #         # biases untouched.
-    #         for m in self.modules_d[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-    #             m.W *= (1-self.p_drop)
-    #         for m in self.modules_g[::3]: 
-    #             m.W *= (1-self.p_drop)
-                
-    #     if self.verbose:
-    #         self.print_this("... ... done",self.logfile)
-            
-    #     return
+    #########################################
 
     
 #################################
