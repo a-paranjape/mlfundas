@@ -79,7 +79,7 @@ class MLUtilities(object):
     
     ###################
     def score(self,Ypred, Y):
-        """ Expect Ypred.shape = Y.shape = (m,n) for n data points and n labels.
+        """ Expect Ypred.shape = Y.shape = (m,n) for n data points and m labels.
             Returns (m,1) vector of scores.
         """
         score = np.sum(Ypred == Y, axis = 1, keepdims = True)
@@ -88,6 +88,27 @@ class MLUtilities(object):
         return score
     ###################
 
+    ###################
+    def assess_classification(self,Ypred,Y,neg_labels=True):
+        """ Expect Ypred.shape = Y.shape = (1,n) for n data points.
+            neg_labels: boolean, True if negative labels used.
+            Returns dict with assessment summary having keys:
+            TP,TN,FP,FN,precision,recall,F1score
+        """
+        n_TP = np.where((Ypred == 1) & (Y == 1))[0].size
+        n_TN = np.where((Ypred == -neg_labels) & (Y == -neg_labels))[0].size
+        n_FP = np.where((Ypred == 1) & (Y == -neg_labels))[0].size
+        n_FN = np.where((Ypred == -neg_labels) & (Y == 1))[0].size
+
+        precision = n_TP/(n_TP + n_FP)
+        recall    = n_TP/(n_TP + n_FN)
+        F1score = 2*precision*recall/(precision + recall + 1e-30)
+
+        out = {'TP':n_TP,'TN':n_TN,'FP':n_FP,'FN':n_FN,
+               'precision':precision,'recall':recall,'F1score':F1score}
+        
+        return out
+    ###################
 
     ###################
     def tanh(self,x):
