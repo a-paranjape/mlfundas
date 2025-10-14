@@ -1378,7 +1378,10 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 predictions[r] = ypred
                 net = None
 
-            Ypred = self.step_fun(np.sum(self.weights*predictions,axis=0)-self.threshold)
+            Ypred = np.sum(self.weights*predictions.T,axis=-1).T
+            if self.threshold is not None:
+                Ypred -= self.threshold
+            Ypred = self.step_fun(Ypred)
             
             if self.neg_labels:
                 # convert 0 to -1 if needed.
