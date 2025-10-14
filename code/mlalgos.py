@@ -1315,8 +1315,8 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         self.net_type = self.ensemble[self.keys[0]]['net'].net_type
         self.neg_labels = self.ensemble[self.keys[0]]['net'].neg_labels
         if self.net_type == 'class':
-            self.threshold = self.ensemble[self.keys[0]]['net'].threshold
-        
+            self.threshold = self.ensemble[self.keys[0]]['net'].modules[-1].threshold
+
         for key in self.keys:
             if self.ensemble[key]['net'].n0 != self.n0:
                 raise Exception("n0 is incompatible for keys '"+key_zero+"' and '"+key+"'")
@@ -1331,7 +1331,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                     raise Exception("neg_labels is incompatible for keys '"+key_zero+"' and '"+key+"'")
                 
             for key in self.keys:
-                if self.ensemble[key]['net'].threshold != self.threshold:
+                if self.ensemble[key]['net'].modules[-1].threshold != self.threshold:
                     raise Exception("threshold is incompatible for keys '"+key_zero+"' and '"+key+"'")
                             
         if self.verbose:
@@ -1364,7 +1364,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 net.net_type = 'reg'
                 net.modules[-1].net_type = 'reg'
                 # force last module to return non-negative probabilities rather than labels
-                net.forward((X - net.X_mean)/(net.X_std + 1e-15))
+                net.forward((X - net.X_mean)/(net.X_std + 1e-15)) # account for standardization, if requested
                 # extract and record probabilities
                 ypred = net.modules[-1].predict()
 
@@ -1378,10 +1378,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 predictions[r] = ypred
                 net = None
 
-            Ypred = np.sum(self.weights*predictions.T,axis=-1).T
-            if self.threshold is not None:
-                Ypred -= self.threshold
-            Ypred = self.step_fun(Ypred)
+            Ypred = np.rint(self.step_fun(np.sum(self.weights*predictions.T,axis=-1).T - self.threshold))
             
             if self.neg_labels:
                 # convert 0 to -1 if needed.
