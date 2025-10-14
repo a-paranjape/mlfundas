@@ -11,6 +11,7 @@ from concurrent.futures import ProcessPoolExecutor
 #############################################
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
+    asc_keys = ['TP','TN','FP','FN','precision','recall','F1score']
     
     ###################
     def rv(self,value_list):
@@ -90,7 +91,8 @@ class MLUtilities(object):
 
     ###################
     def assess_classification(self,Ypred,Y,neg_labels=True):
-        """ Expect Ypred.shape = Y.shape = (1,n) for n data points.
+        """ Assess binary classification output for predicted labels Ypred and true labels Y.
+            Expect Ypred.shape = Y.shape = (1,n) for n data points.
             neg_labels: boolean, True if negative labels used.
             Returns dict with assessment summary having keys:
             TP,TN,FP,FN,precision,recall,F1score
@@ -107,9 +109,34 @@ class MLUtilities(object):
         out = {'TP':n_TP,'TN':n_TN,'FP':n_FP,'FN':n_FN,
                'precision':precision,'recall':recall,'F1score':F1score}
         
+        if list(out.keys()) != self.asc_keys:
+            print('Warning: unexpected list of keys in MLUtilities.assess_classification()')
+        
         return out
     ###################
 
+    ###################
+    def assess_classification_ensemble(self,neo,X,Y):
+        """ Assess binary classification output for network ensemble. 
+            Expect neo to be NetworkEnsembleObject instance, compatible with 
+            features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (1,nsamp)).
+            Returns dict with keys
+            TP,TN,FP,FN,precision,recall,F1score
+            containing ensemble averages (STD DEV UNDER CONSTRUCTION).
+        """
+        self.asc_ens = {akey:0.0 for akey in self.asc_keys}
+        N_ens = len(neo.keys)
+        asc_ens = {key:0.0 for key in self.asc_keys}
+        for key in neo.keys:
+            net_this = neo.ensemble[key]['net']
+            asc_this = self.assess_classification(net_this.predict(X),Y,neg_labels=neo.neg_labels)
+            for akey in self.asc_keys:
+                asc_ens[akey] += asc_this[akey]/N_ens
+            del net_this
+        return asc_ens
+    ###################
+
+    
     ###################
     def tanh(self,x):
         return np.tanh(x)
