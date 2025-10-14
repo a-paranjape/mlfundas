@@ -2,6 +2,7 @@ import numpy as np
 from scipy import linalg
 from utilities import Utilities
 from mllib import MLUtilities
+from mlmodules import gen_filestems
 from mlmodules import *
 import copy,pickle,shutil,gc
 from pathlib import Path
@@ -389,15 +390,43 @@ class Sequential(Module,MLUtilities,Utilities):
     def train(self,X,Y,params={}):
         """ Main routine for training.
             Expect X.shape = (n0,n_samp), Y.shape = (n_layer[-1],n_samp)
+            -- params: dictionary with key/value pairs being subset of
+               -- 'max_epoch':int, maximum training epoch (default 100)
+               -- 'lrate':float, learning rate (default 0.005)
+               -- 'mb_count':int, number of mini-batches (default 1)
+               -- 'val_frac':float, fraction of data used for validation (early stopping) (default 0.2)
+               -- 'check_after':int, epoch after which early stopping check are active, also equal to duration of check (default 10)
+               -- 'dream_schedule': None (default) or dict containing following params defining periodic 'dream' state during training
+                   -- 'dream_every':int, enter one dream epoch every 'dream_every' normal epochs (default 10, i.e. dream state is 10% of total training duration)
+                   -- 'corrupt_X':float, fraction of each input feature to be replaced by output of basis layer during dreaming (default 0.8)
+                   -- 'corrupt_Y':float, fraction of labels to be shuffled during dreaming (default 0.1)
         """
         max_epoch = params.get('max_epoch',100)
         lrate = params.get('lrate',0.005)
         mb_count = params.get('mb_count',1)
         val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
         check_after = params.get('check_after',10)
+        dream_schedule = params.get('dream_schedule',None)
         
         if self.verbose:
             self.print_this("... training",self.logfile)
+
+        if dream_schedule is not None:
+            if not isinstance(dream_schedule,dict):
+                raise Exception("dream_schedule must be dictionary if not None")
+            
+            dream_every = dream_schedule.get('dream_every',10)
+            corrupt_X = dream_schedule.get('corrupt_X',0.8)
+            corrupt_Y = dream_schedule.get('corrupt_Y',0.1)
+
+            if (corrupt_X < 0.0) | (corrupt_X > 1.0):
+                raise Exception("need 0.0 <= corrupt_X <= 1.0 when dreaming")
+            if (corrupt_Y < 0.0) | (corrupt_Y > 1.0):
+                raise Exception("need 0.0 <= corrupt_Y <= 1.0 when dreaming")
+            
+            if self.verbose:
+                self.print_this("... ... with dreaming",self.logfile)
+                
             
         d,n_samp = X.shape
 
@@ -466,12 +495,71 @@ class Sequential(Module,MLUtilities,Utilities):
         self.val_loss = np.zeros(max_epoch)
         val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
+
+        if dream_schedule is not None:
+            t_dream = 1 # counter for tracking dream state epochs
+        
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
             X_train_shuff = X_train[:,ind_shuff].copy()
             Y_train_shuff = Y_train[:,ind_shuff].copy()
             batch_loss = 0.0
             decay_loss = 0.0
+
+            #######################
+            # modify features and labels in dream state epochs
+            if dream_schedule is not None:
+                if t_dream == dream_every:
+                    # expose last hidden layer with output size n_last_layer
+                    hidden = self.extract_hidden_features(layer=None) # layer=None extracts last hidden layer (or basis functions)
+
+                    # generate 'noise' of shape (n_last_layer,n_samp)
+                    noise_X = hidden.predict(X_train_shuff) # this seems to work better than using random inputs
+                    # # ... setup input for calculating dream state random firing
+                    # dream_input = (np.mean(X_train_shuff,axis=1) + np.std(X_train_shuff,axis=1)*self.rng.randn(X_train_shuff.shape[0],X_train_shuff.shape[1]).T).T
+                    # # ... implement random firing
+                    # noise_X = hidden.predict(dream_input)
+                    # dream_input = None
+                    
+                    if noise_X.shape[0] >= X_train_shuff.shape[0]:
+                        # this is typical case for regression
+                        # ... throw away excess features
+                        noise_X = noise_X[:X_train_shuff.shape[0],:].copy()
+                    else:
+                        # this is typical case for generative problems (e.g. autoencoder structure)
+                        # ... repeat features
+                        noise_X_old = noise_X.copy()
+                        noise_X = np.zeros_like(X_train_shuff)
+                        multiplier = noise_X.shape[0] // noise_X_old.shape[0]
+                        remainder = noise_X.shape[0] % noise_X_old.shape[0]
+                        for m in range(multiplier):
+                            noise_X[m*noise_X_old.shape[0]:(m+1)*noise_X_old.shape[0],:] = noise_X_old
+                        noise_X[-remainder:,:] = noise_X_old[:remainder,:]
+                        noise_X_old = None
+
+                    if self.standardize_X:
+                        noise_X = (noise_X - noise_X.mean())/(noise_X.std() + 1e-15)
+
+                    # below is not needed, since feature-label connection already broken
+                    # noise_X = noise_X.T
+                    # self.rng.shuffle(noise_X) # shuffle works on first axis, we need it on second.
+                    # noise_X = noise_X.T
+                    
+                    X_train_shuff = corrupt_X*noise_X + (1-corrupt_X)*X_train_shuff
+
+                    corrupt_size = np.max([int(corrupt_Y*n_samp),1])
+                    ind_corrupt = self.rng.choice(np.arange(n_samp),size=corrupt_size,replace=False)
+                    ind_corrupt_shuff = ind_corrupt.copy()
+                    self.rng.shuffle(ind_corrupt_shuff)
+                    Y_train_shuff[:,ind_corrupt] = Y_train_shuff[:,ind_corrupt_shuff]
+                    ind_corrupt = None
+                    ind_corrupt_shuff = None
+                    
+                    t_dream = 0 # reset dream counter
+                
+                t_dream += 1
+            #######################
+            
             for b in range(mb_count):
                 sl = np.s_[b*mb_size:(b+1)*mb_size] if b < mb_count-1 else np.s_[b*mb_size:]                    
                 data,target = X_train_shuff[:,sl].copy(),Y_train_shuff[:,sl].copy()
@@ -766,7 +854,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize_X=True,standardize_Y=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=None,loss_type='square',test_type='perc',htypes=None,
-                 neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,
+                 neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,dream_schedules=None,
                  seed=None,file_stem='net',ensemble=False,parallel=False,nproc=4,
                  verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -783,7 +871,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.parallel = parallel
         self.nproc = nproc if self.parallel else 1
         
-        self.ensemble = ensemble # if True, ensemble over top 10% of n_iter*(arch+hyperparam) choices, else only record best.
+        self.ensemble = ensemble # if True, ensemble over top 5% of n_iter*(arch+hyperparam) choices, else only record best.
         
         # min/max no. of layers (i.e. network depth)
         self.min_layer = min_layer 
@@ -793,6 +881,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.lrates = lrates
 
         self.check_after = check_after
+        self.dream_schedules = dream_schedules if dream_schedules is not None else [None] 
 
         # None or list of floats
         self.thresholds = [None] if thresholds is None else thresholds
@@ -940,7 +1029,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         # save this network (weights, setup dict and loss history) to file
         net.save()
         imax_trn = np.where(net.training_loss > 0.0)[0][-1]
-        imax_val = np.where(net.val_loss > 0.0)[0][-1]
+        imax_val = np.where(net.val_loss > 0.0)[0][-1] if net.val_loss.max() > 0.0 else 0 # val_loss may not have been computed
         imax = np.max([imax_trn,imax_val]) + 1
         net.epochs = net.epochs[:imax]
         net.training_loss = net.training_loss[:imax]
@@ -956,7 +1045,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     #############################
 
     #############################
-    def trainNN(self):
+    def trainNN(self,max_epoch=1000000):
         """ Train various networks and select the one that minimizes test loss.
             Returns: 
             -- net: instance of Sequential 
@@ -976,12 +1065,11 @@ class BuildNN(Module,MLUtilities,Utilities):
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         
         mb_count = int(np.sqrt(self.n_train)) 
-        max_epoch = 1000000 # validation checks will be active
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
-        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after}
+        ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,'dream_schedule':{}}
         
         if self.arch_type in [None,'no_reg']:
             reg_funs = ['none']
@@ -1021,7 +1109,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 hidden_atypes = self.htypes
 
         cnt_max = self.n_iter*layers.size*len(self.wt_decays)*len(reg_funs)*len(self.lrates)
-        cnt_max *= len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes)*len(self.thresholds)
+        cnt_max *= len(self.max_ex_vals)*len(last_atypes)*len(hidden_atypes)*len(self.thresholds)*len(self.dream_schedules)
         
         if self.verbose:
             self.print_this("... cycling over {0:d} repetitions of {1:d} possible options"
@@ -1048,9 +1136,11 @@ class BuildNN(Module,MLUtilities,Utilities):
                                     pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
                                     for threshold in self.thresholds:
                                         pset['threshold'] = threshold
-                                        for it in range(self.n_iter):
-                                            X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
-                                            tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
+                                        for ds in self.dream_schedules:
+                                            ptrn['dream_schedule'] = ds
+                                            for it in range(self.n_iter):
+                                                X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
+                                                tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
 
         # train networks
         if len(tasks) != cnt_max:
@@ -1076,6 +1166,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 net = copy.deepcopy(net_dict['net'])
                 net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
                 net.params['file_stem'] = net.file_stem
+                net.modules = gen_filestems(net.modules,net.file_stem)
                 net.save()
                 net.save_loss_history()
 
@@ -1110,6 +1201,7 @@ class BuildNN(Module,MLUtilities,Utilities):
             net = copy.deepcopy(best_net['net'])
             net.file_stem = self.file_stem
             net.params['file_stem'] = self.file_stem
+            net.modules = gen_filestems(net.modules,self.file_stem)
             net.save()
             net.save_loss_history()
 
