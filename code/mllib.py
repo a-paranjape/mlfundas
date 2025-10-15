@@ -124,15 +124,25 @@ class MLUtilities(object):
             TP,TN,FP,FN,precision,recall,F1score
             containing ensemble averages (STD DEV UNDER CONSTRUCTION).
         """
-        self.asc_ens = {akey:0.0 for akey in self.asc_keys}
         N_ens = len(neo.keys)
-        asc_ens = {key:0.0 for key in self.asc_keys}
-        for key in neo.keys:
+        asc_ens = {akey:{'mean':0.0,'std':0.0} for akey in self.asc_keys}
+        values = np.zeros((len(self.asc_keys),len(neo.keys)),dtype=float)
+        for n in range(len(neo.keys)):
+            key = neo.keys[n]
             net_this = neo.ensemble[key]['net']
             asc_this = self.assess_classification(net_this.predict(X),Y,neg_labels=neo.neg_labels)
-            for akey in self.asc_keys:
-                asc_ens[akey] += asc_this[akey]/N_ens
+            for a in range(len(self.asc_keys)):
+                akey = self.asc_keys[a]
+                values[a,n] = asc_this[akey]
             del net_this
+
+        means = {self.asc_keys[a]:np.mean(values[a]) for a in range(len(self.asc_keys))}
+        stds = {self.asc_keys[a]:np.std(values[a]) for a in range(len(self.asc_keys))}
+            
+        for key in neo.keys:
+            for akey in self.asc_keys:
+                asc_ens[akey]['mean'] = means[akey]
+                asc_ens[akey]['std'] = stds[akey]
         return asc_ens
     ###################
 
