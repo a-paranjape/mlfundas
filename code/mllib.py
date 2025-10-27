@@ -4,6 +4,7 @@ from utilities import Utilities
 
 import multiprocessing as mp
 from time import sleep
+import gc
 
 import os,psutil
 from concurrent.futures import ProcessPoolExecutor
@@ -97,10 +98,14 @@ class MLUtilities(object):
             Returns dict with assessment summary having keys:
             TP,TN,FP,FN,precision,recall,F1score
         """
-        n_TP = np.where((Ypred == 1) & (Y == 1))[0].size
-        n_TN = np.where((Ypred == -neg_labels) & (Y == -neg_labels))[0].size
-        n_FP = np.where((Ypred == 1) & (Y == -neg_labels))[0].size
-        n_FN = np.where((Ypred == -neg_labels) & (Y == 1))[0].size
+        Ypred_i = np.rint(Ypred)
+        Y_i = np.rint(Y)
+        n_TP = np.where((Ypred_i == 1) & (Y_i == 1))[0].size
+        n_TN = np.where((Ypred_i == -neg_labels) & (Y_i == -neg_labels))[0].size
+        n_FP = np.where((Ypred_i == 1) & (Y_i == -neg_labels))[0].size
+        n_FN = np.where((Ypred_i == -neg_labels) & (Y_i == 1))[0].size
+        del Ypred_i,Y_i
+        gc.collect()
 
         precision = n_TP/(n_TP + n_FP)
         recall    = n_TP/(n_TP + n_FN)
