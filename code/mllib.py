@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor
 #############################################
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
-    asc_keys = ['TP','TN','FP','FN','precision','recall','F1score']
+    asc_keys = ['TP','TN','FP','FN','accuracy','precision','recall','F1score']
     
     ###################
     def rv(self,value_list):
@@ -107,11 +107,13 @@ class MLUtilities(object):
         del Ypred_i,Y_i
         gc.collect()
 
+        accuracy = (n_TP + n_TN)/(n_TP + n_TN + n_FP + n_FN)
         precision = n_TP/(n_TP + n_FP)
         recall    = n_TP/(n_TP + n_FN)
         F1score = 2*precision*recall/(precision + recall + 1e-30)
 
         out = {'TP':n_TP,'TN':n_TN,'FP':n_FP,'FN':n_FN,
+               'accuracy':accuracy,
                'precision':precision,'recall':recall,'F1score':F1score}
         
         if list(out.keys()) != self.asc_keys:
@@ -126,7 +128,7 @@ class MLUtilities(object):
             Expect neo to be NetworkEnsembleObject instance, compatible with 
             features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (1,nsamp)).
             Returns dict with keys
-            TP,TN,FP,FN,precision,recall,F1score
+            TP,TN,FP,FN,accuracy,precision,recall,F1score
             containing ensemble averages (STD DEV UNDER CONSTRUCTION).
         """
         N_ens = len(neo.keys)
