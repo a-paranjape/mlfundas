@@ -1314,8 +1314,6 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         self.nlast = self.ensemble[key_zero]['net'].n_layer[-1]
         self.net_type = self.ensemble[self.keys[0]]['net'].net_type
         self.neg_labels = self.ensemble[self.keys[0]]['net'].neg_labels
-        if self.net_type == 'class':
-            self.threshold = self.ensemble[self.keys[0]]['net'].modules[-1].threshold
 
         for key in self.keys:
             if self.ensemble[key]['net'].n0 != self.n0:
@@ -1324,16 +1322,12 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 raise Exception("n_last is incompatible for keys '"+key_zero+"' and '"+key+"'")
             if self.ensemble[key]['net'].net_type != self.net_type:
                 raise Exception("net_type is incompatible for keys '"+key_zero+"' and '"+key+"'")
-            
+                            
         if self.net_type == 'class':
             for key in self.keys:
                 if self.ensemble[key]['net'].neg_labels != self.neg_labels:
                     raise Exception("neg_labels is incompatible for keys '"+key_zero+"' and '"+key+"'")
                 
-            for key in self.keys:
-                if self.ensemble[key]['net'].modules[-1].threshold != self.threshold:
-                    raise Exception("threshold is incompatible for keys '"+key_zero+"' and '"+key+"'")
-                            
         if self.verbose:
             self.print_this("... ... defining ensemble weights",self.logfile)
         self.weights = np.zeros(len(self.keys))
@@ -1341,6 +1335,15 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             self.weights[r] = 1/(self.ensemble[self.keys[r]]['teststat'] + 1e-15) # inverse error weighting
             
         self.weights /= self.weights.sum()
+                        
+        if self.net_type == 'class':
+            if self.verbose:
+                self.print_this("... ... setting ensemble threshold",self.logfile)
+            thresholds = []
+            for key in self.keys:
+                thresholds.append(self.ensemble[key]['net'].modules[-1].threshold)
+            self.threshold = np.sum(self.weights*np.array(thresholds))
+            del thresholds
                 
         if self.verbose:
             self.print_this("... ensemble loaded and checked",self.logfile)
