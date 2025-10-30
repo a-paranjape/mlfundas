@@ -13,6 +13,7 @@ from concurrent.futures import ProcessPoolExecutor
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
     asc_keys = ['TP','TN','FP','FN','accuracy','precision','recall','F1score']
+    asmc_keys = ['confusion','accuracy','precision','recall','F1score']
     
     ###################
     def rv(self,value_list):
@@ -96,7 +97,7 @@ class MLUtilities(object):
             Expect Ypred.shape = Y.shape = (1,n) for n data points.
             neg_labels: boolean, True if negative labels used.
             Returns dict with assessment summary having keys:
-            TP,TN,FP,FN,precision,recall,F1score
+            TP,TN,FP,FN,accuracy,precision,recall,F1score
         """
         Ypred_i = np.rint(Ypred)
         Y_i = np.rint(Y)
@@ -168,6 +169,101 @@ class MLUtilities(object):
                 asc_ens[akey]['95pc'] = pcs_95[a]
                 
         return asc_ens
+    ###################
+
+
+    ###################
+    def assess_multi_classification(self,Ypred,Y):
+        """ Assess binary classification output for predicted labels Ypred and true labels Y.
+            Expect Ypred.shape = Y.shape = (K,n) for K categories and n data points, domain {0,1} (one-hot encoding).
+            Returns dict with assessment summary having keys:
+            confusion,accuracy,precision,recall,F1score
+            where confusion = confusion matrix and remaining quantities are equi-weighted macro-averages.
+        """
+        Ypred_i = np.rint(Ypred)
+        Y_i = np.rint(Y)
+        
+        K = Y.shape[0]
+        confusion = np.zeros((K,K),dtype=float)
+        # rows: true values, columns: predicted values
+        for k_true in range(K):
+            for k_pred in range(K):
+                count = np.where((Y_i[k_true] == 1.0) & (Ypred_i[k_pred] == 1.0))[0].size
+                confusion[k_true,k_pred] = count
+        
+        del Ypred_i,Y_i
+        gc.collect()
+
+        if np.sum(confusion) != Y.shape[1]:
+            raise Exception("Invalid sum over confusion matrix elements.")
+
+        accuracy = np.trace(confusion)/Y.shape[1]
+
+        precision_k = np.zeros(K)
+        recall_k = np.zeros(K)
+        for k in range(K):
+            precision_k[k] = confusion[k,k]/(np.sum(confusion[:,k]) + 1e-30)
+            recall_k[k] = confusion[k,k]/(np.sum(confusion[k,:]) + 1e-30)
+        
+        precision = np.mean(precision_k)
+        recall    = np.mean(recall_k)
+        F1score = 2*precision*recall/(precision + recall + 1e-30)
+
+        out = {'confusion':confusion,'accuracy':accuracy,'precision':precision,'recall':recall,'F1score':F1score}
+        
+        if list(out.keys()) != self.asmc_keys:
+            print('Warning: unexpected list of keys in MLUtilities.assess_multi_classification()')
+        
+        return out
+    ###################
+
+
+    ###################
+    def assess_multi_classification_ensemble(self,neo,X,Y,N_ens_thresh=10):
+        """ Assess multi-class classification output for network ensemble. 
+            Expect neo to be NetworkEnsembleObject instance, compatible with 
+            features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (K,nsamp)).
+            Returns dict with keys
+            confusion,accuracy,precision,recall,F1score
+            containing ensemble (mean,std) or (median,16pc,84pc).
+        """
+        N_ens = len(neo.keys)
+        asmc_ens = ({akey:{'mean':0.0,'std':0.0} for akey in self.asmc_keys}
+                   if N_ens <= N_ens_thresh else
+                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0} for akey in self.asmc_keys})
+        values = np.zeros((len(self.asmc_keys),len(neo.keys)),dtype=float)
+        for n in range(len(neo.keys)):
+            key = neo.keys[n]
+            net_this = neo.ensemble[key]['net']
+            asmc_this = self.assess_multi_classification(net_this.predict(X),Y)
+            for a in range(len(self.asmc_keys)):
+                akey = self.asmc_keys[a]
+                values[a,n] = asmc_this[akey]
+            del net_this
+
+        if N_ens <= N_ens_thresh:
+            means = np.mean(values,axis=1)
+            stds = np.std(values,axis=1)
+            for a in range(len(self.asmc_keys)):
+                akey = self.asmc_keys[a]
+                asmc_ens[akey]['mean'] = means[a]
+                asmc_ens[akey]['std'] = stds[a]
+        else:
+            medians = np.median(values,axis=1)
+            pcs_05 = np.percentile(values,5,axis=1)
+            pcs_16 = np.percentile(values,16,axis=1)
+            pcs_84 = np.percentile(values,84,axis=1)
+            pcs_95 = np.percentile(values,95,axis=1)
+
+            for a in range(len(self.asmc_keys)):
+                akey = self.asmc_keys[a]
+                asmc_ens[akey]['median'] = medians[a]
+                asmc_ens[akey]['5pc'] = pcs_05[a]
+                asmc_ens[akey]['16pc'] = pcs_16[a]
+                asmc_ens[akey]['84pc'] = pcs_84[a]
+                asmc_ens[akey]['95pc'] = pcs_95[a]
+                
+        return asmc_ens
     ###################
 
     
