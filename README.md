@@ -18,9 +18,10 @@ Modules implementing basic machine learning algorithms for classification and re
 This code arose from following the excellent course on [Introduction to Machine Learning](https://openlearninglibrary.mit.edu/courses/course-v1:MITx+6.036+1T2019/course/) by L. Kaebling and colleagues, hosted by the [MIT Open Learning Library](https://openlearninglibrary.mit.edu/).
 
 ## Examples
-* $\texttt{examples/BuildNN\\_Example.ipynb}$: Jupyter notebook showing example usage of `BuildNN` for search over architectures and hyperparameters, along with comparison of single versus ensembled neural networks, for regression problems.
+* $\texttt{examples/BuildNN\\_Example.ipynb}$: Jupyter notebook showing example usage of `BuildNN` for search over architectures and hyperparameters, along with comparison of single versus ensembled neural networks, for regression and classification problems.
 * $\texttt{examples/BiSequential.ipynb}$: Jupyter notebook showing example usage of existing `BiSequential` instance, based on [Paranjape & Sheth (2024)](https://arxiv.org/abs/2410.21374).
 * $\texttt{examples/GAN\\_Example.ipynb}$: Jupyter notebook showing example construction and usage of generative adversarial network using `GAN` instance.
+* $\texttt{examples/Subconscious\\_Example.ipynb}$: Jupyter notebook showing example usage of subconscious learning and comparison with standard training, for regression and classification problems.
 
 ## Contact
 Aseem Paranjape: aseem_at_iucaa_dot_in
