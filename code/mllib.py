@@ -123,16 +123,18 @@ class MLUtilities(object):
     ###################
 
     ###################
-    def assess_classification_ensemble(self,neo,X,Y):
+    def assess_classification_ensemble(self,neo,X,Y,N_ens_thresh=10):
         """ Assess binary classification output for network ensemble. 
             Expect neo to be NetworkEnsembleObject instance, compatible with 
             features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (1,nsamp)).
             Returns dict with keys
             TP,TN,FP,FN,accuracy,precision,recall,F1score
-            containing ensemble averages (STD DEV UNDER CONSTRUCTION).
+            containing ensemble (mean,std) or (median,16pc,84pc).
         """
         N_ens = len(neo.keys)
-        asc_ens = {akey:{'mean':0.0,'std':0.0} for akey in self.asc_keys}
+        asc_ens = ({akey:{'mean':0.0,'std':0.0} for akey in self.asc_keys}
+                   if N_ens <= N_ens_thresh else
+                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0} for akey in self.asc_keys})
         values = np.zeros((len(self.asc_keys),len(neo.keys)),dtype=float)
         for n in range(len(neo.keys)):
             key = neo.keys[n]
@@ -143,13 +145,28 @@ class MLUtilities(object):
                 values[a,n] = asc_this[akey]
             del net_this
 
-        means = {self.asc_keys[a]:np.mean(values[a]) for a in range(len(self.asc_keys))}
-        stds = {self.asc_keys[a]:np.std(values[a]) for a in range(len(self.asc_keys))}
-            
-        for key in neo.keys:
-            for akey in self.asc_keys:
-                asc_ens[akey]['mean'] = means[akey]
-                asc_ens[akey]['std'] = stds[akey]
+        if N_ens <= N_ens_thresh:
+            means = np.mean(values,axis=1)
+            stds = np.std(values,axis=1)
+            for a in range(len(self.asc_keys)):
+                akey = self.asc_keys[a]
+                asc_ens[akey]['mean'] = means[a]
+                asc_ens[akey]['std'] = stds[a]
+        else:
+            medians = np.median(values,axis=1)
+            pcs_05 = np.percentile(values,5,axis=1)
+            pcs_16 = np.percentile(values,16,axis=1)
+            pcs_84 = np.percentile(values,84,axis=1)
+            pcs_95 = np.percentile(values,95,axis=1)
+
+            for a in range(len(self.asc_keys)):
+                akey = self.asc_keys[a]
+                asc_ens[akey]['median'] = medians[a]
+                asc_ens[akey]['5pc'] = pcs_05[a]
+                asc_ens[akey]['16pc'] = pcs_16[a]
+                asc_ens[akey]['84pc'] = pcs_84[a]
+                asc_ens[akey]['95pc'] = pcs_95[a]
+                
         return asc_ens
     ###################
 
