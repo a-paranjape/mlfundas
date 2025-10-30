@@ -413,7 +413,7 @@ class NLL(Module,MLUtilities):
 class NLLM(Module,MLUtilities):
     def forward(self,Ypred,Y):
         self.Ypred = Ypred # (n_last,b), no check.
-        self.Y = Y # no check. user must ensure only integers 0..K-1 passed for K categories
+        self.Y = Y # no check. user must ensure only integers 0/1 passed for K categories (one-hot encoding)
         Loss = np.sum(-self.Y*np.log(self.Ypred + 1e-15),axis=0,keepdims=True) # (1,b)
         return np.sum(Loss) # (1,1)
 
