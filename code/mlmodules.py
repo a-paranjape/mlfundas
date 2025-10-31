@@ -255,7 +255,7 @@ class SoftMax(Module,MLUtilities):
         return dLdZ
 
     def predict(self):
-        out = self.one_hot(self.rv(np.argmax(self.A,axis=0)),self.A.shape[0]) # (K,n_sample)
+        out = self.one_hot(self.rv(np.argmax(self.A,axis=0)+1),self.A.shape[0]) # (K,n_sample)
         return out
 #################
 
