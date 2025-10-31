@@ -534,7 +534,8 @@ class Sequential(Module,MLUtilities,Utilities):
                         remainder = noise_X.shape[0] % noise_X_old.shape[0]
                         for m in range(multiplier):
                             noise_X[m*noise_X_old.shape[0]:(m+1)*noise_X_old.shape[0],:] = noise_X_old
-                        noise_X[-remainder:,:] = noise_X_old[:remainder,:]
+                        if remainder > 0:
+                            noise_X[-remainder:,:] = noise_X_old[:remainder,:]
                         noise_X_old = None
 
                     if self.standardize_X:
