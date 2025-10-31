@@ -266,6 +266,72 @@ class MLUtilities(object):
         return asmc_ens
     ###################
 
+    ###################
+    # helper functions to re-package images into vectors
+    ###################
+    def unroll(self,I):
+        """ Single binary clockwise unroll. Expect I to be numpy array of shape (2n,2n) for integer n. """
+        n = I.shape[0]//2
+        I0 = I[n:,:n]
+        I1 = I[n:,n:]
+        I2 = I[:n,n:]
+        I3 = I[:n,:n]
+        return [I0,I1,I2,I3]
+    ###################
+
+    ###################
+    def vortex_unroll(self,in_list,first_use=True):
+        """ Binary recursive clockwise unroll. Expect in_list to be list of numpy arrays of shape (2**m,2**m) for integer m. """
+        if len(in_list) == 0:
+            raise Exception('Need non-empty list in vortex_unroll()')
+        m = int(np.rint(np.log2(in_list[0].shape[0])))
+        if first_use:
+            for I in in_list:
+                if I.shape != (2**m,2**m):
+                    err_str = 'Incompatible matrix detected in binary_recursive_unroll(). '
+                    err_str += "Expecting ({0:d},{0:d}), found ".format(2**m)
+                    err_str += '(' + ','.join([str(i) for i in I.shape])  + ')'
+                    raise Exception(err_str)
+        out_list = []
+        if m > 0:
+            for I in in_list:
+                Js = unroll(I)
+                for J in Js:
+                    out_list.append(J)
+            out_list = vortex_unroll(out_list,first_use=False)
+        else:
+            for I in in_list:
+                out_list.append(I)
+        return np.squeeze(np.array(out_list))
+    ###################
+
+    ###################
+    def vortex_package(self,X):
+        """ Re-package array of matrices X of shape (D,D,nsamp) with D=2**M for integer M,
+            into array of shape (D**2,nsamp), where each D x D matrix is unrolled using 
+            vortex_unroll.
+        """
+        if len(X.shape) != 3:
+            raise Exception("vortex_package() needs input of shape (D,D,nsamp).")
+        if X.shape[0] != X.shape[1]:
+            raise Exception("vortex_package() needs input of shape (D,D,nsamp).")
+        D = X.shape[0]
+        M = int(np.rint(np.log2(D)))
+        if D != 2**M:
+            raise Exception("vortex_package() needs input of shape (D,D,nsamp) with D=2**M. Detected D = {0:d} instead".format(D))
+
+        nsamp = X.shape[2]
+        X_out = np.zeros((nsamp,D**2),dtype=X.dtype) # will be transposed later
+
+        for i in range(nsamp):
+            X_out[i] = vortex_unroll([X[:,:,i]])
+            ut.status_bar(i,nsamp)
+
+        X_out = X_out.T # shape (D**2,nsamp)
+        return X_out
+    ###################
+    ###################
+
     
     ###################
     def tanh(self,x):
