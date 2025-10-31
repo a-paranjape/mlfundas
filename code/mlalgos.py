@@ -1020,7 +1020,12 @@ class BuildNN(Module,MLUtilities,Utilities):
                 ts = np.sum((net.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15)
                 ts = np.sqrt(ts)
         else:
-            ts = np.where(net.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
+            if Y_test.shape[0] == 1:
+                ts = np.where(net.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
+            else:
+                asmc = self.assess_multi_classification(net.predict(X_test),Y_test)
+                ts = 1.0 - asmc['accuracy']
+                asmc = None
             # this is fraction of predictions that are incorrect
             
         if not np.isfinite(ts):
