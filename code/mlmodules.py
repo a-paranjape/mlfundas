@@ -239,9 +239,9 @@ class SoftMax(Module,MLUtilities):
     threshold = 0.5 # not used
     
     def forward(self,Z):
-        exp_z = np.exp(Z - np.max(Z)) # (K,n_{sample}) # subtract max inside exp to control overflows, cancels in A.
-        self.A = exp_z/np.sum(exp_z,axis=0)
-        return self.A # (K,n_{sample})
+        exp_z = np.exp(Z - np.max(Z)) # (K,n_sample) # subtract max inside exp to control overflows, cancels in A.
+        self.A = exp_z/(np.sum(exp_z,axis=0) + 1e-15)
+        return self.A # (K,n_sample)
 
     def backward(self,dLdA,grad=False): 
         # dLdA -> (K,b) if grad=False else (K,n_last,b)
@@ -255,7 +255,8 @@ class SoftMax(Module,MLUtilities):
         return dLdZ
 
     def predict(self):
-        return np.array([np.argmax(self.A,axis=0)]).T # (n_{sample},1)
+        out = self.one_hot(self.rv(np.argmax(self.A,axis=0)),self.A.shape[0]) # (K,n_sample)
+        return out
 #################
 
 #################################
