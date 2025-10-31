@@ -9,6 +9,8 @@ import gc
 import os,psutil
 from concurrent.futures import ProcessPoolExecutor
 
+from matplotlib.image import imread
+
 #############################################
 class MLUtilities(object):
     """ Simple utilities for ML routines. """
@@ -581,16 +583,17 @@ class MLUtilities(object):
     #################################
     # MNIST manipulation code courtesy MIT-OLL MLIntro Course
     ###################
-    def load_mnist_data(self,labels):
+    def load_mnist_data(self,labels,path):
         """
         @param labels list of labels from {0, 1,...,9}
+        @param path str path to data/mnist folder
         @return dict: label (int) -> [[image1], [image2], ...]
         """
 
         data = {}
 
         for label in labels:
-            images = self.load_mnist_single("../data/mnist/mnist_train{}.png".format(label))
+            images = self.load_mnist_single(path+"/data/mnist/mnist_train{}.png".format(label))
             y = np.array([[label] * len(images)])
             data[label] = {
                 "images": images,
