@@ -577,6 +577,55 @@ class MLUtilities(object):
                 
         return mdict
     ###################
+
+    #################################
+    # MNIST manipulation code courtesy MIT-OLL MLIntro Course
+    ###################
+    def load_mnist_data(self,labels):
+        """
+        @param labels list of labels from {0, 1,...,9}
+        @return dict: label (int) -> [[image1], [image2], ...]
+        """
+
+        data = {}
+
+        for label in labels:
+            images = self.load_mnist_single("../data/mnist/mnist_train{}.png".format(label))
+            y = np.array([[label] * len(images)])
+            data[label] = {
+                "images": images,
+                "labels": y
+            }
+
+        return data
+    ###################
+
+    ###################
+    def load_mnist_single(self,path_data):
+        """
+        @return list of images (first row of large picture)
+        """
+
+        img = imread(path_data)  # 2156 x 2156 (m,n)
+        m, n = img.shape
+
+        side_len = 28  # standard mnist
+        n_img = int(m / 28)
+
+        imgs = []  # list of single images
+        for i in range(n_img):
+            start_ind = i*side_len
+            end_ind = start_ind + side_len
+            current_img = img[start_ind:end_ind, :side_len]  # 28 by 28
+
+            current_img = current_img / 255 # normalization!!!
+
+            imgs.append(current_img)
+
+        return imgs
+    ###################
+
+
     
 #################################
     
