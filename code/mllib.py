@@ -295,10 +295,10 @@ class MLUtilities(object):
         out_list = []
         if m > 0:
             for I in in_list:
-                Js = unroll(I)
+                Js = self.unroll(I)
                 for J in Js:
                     out_list.append(J)
-            out_list = vortex_unroll(out_list,first_use=False)
+            out_list = self.vortex_unroll(out_list,first_use=False)
         else:
             for I in in_list:
                 out_list.append(I)
@@ -309,7 +309,7 @@ class MLUtilities(object):
     def vortex_package(self,X):
         """ Re-package array of matrices X of shape (D,D,nsamp) with D=2**M for integer M,
             into array of shape (D**2,nsamp), where each D x D matrix is unrolled using 
-            vortex_unroll.
+            vortex_unroll which partially preserves spatial coherence.
         """
         if len(X.shape) != 3:
             raise Exception("vortex_package() needs input of shape (D,D,nsamp).")
@@ -324,8 +324,7 @@ class MLUtilities(object):
         X_out = np.zeros((nsamp,D**2),dtype=X.dtype) # will be transposed later
 
         for i in range(nsamp):
-            X_out[i] = vortex_unroll([X[:,:,i]])
-            ut.status_bar(i,nsamp)
+            X_out[i] = self.vortex_unroll([X[:,:,i]])
 
         X_out = X_out.T # shape (D**2,nsamp)
         return X_out
