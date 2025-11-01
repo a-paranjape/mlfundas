@@ -233,38 +233,50 @@ class MLUtilities(object):
         asmc_ens = ({akey:{'mean':0.0,'std':0.0} for akey in self.asmc_keys}
                    if N_ens <= N_ens_thresh else
                    {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0} for akey in self.asmc_keys})
-        values = np.zeros((len(self.asmc_keys),len(neo.keys)),dtype=float)
+        confusions = np.zeros((len(neo.keys),Y.shape[0],Y.shape[0]),dtype=float)
+        values = np.zeros((len(self.asmc_keys)-1,len(neo.keys)),dtype=float)
         for n in range(len(neo.keys)):
             key = neo.keys[n]
             net_this = neo.ensemble[key]['net']
             asmc_this = self.assess_multi_classification(net_this.predict(X),Y)
-            for a in range(len(self.asmc_keys)):
-                akey = self.asmc_keys[a]
+            confusions[n] = asmc_this['confusion']
+            for a in range(len(self.asmc_keys)-1):
+                akey = self.asmc_keys[a+1]
                 values[a,n] = asmc_this[akey]
             del net_this
 
         if N_ens <= N_ens_thresh:
+            asmc_ens['confusion']['mean'] = np.mean(confusions,axis=0)
+            asmc_ens['confusion']['std'] = np.std(confusions,axis=0)
             means = np.mean(values,axis=1)
             stds = np.std(values,axis=1)
-            for a in range(len(self.asmc_keys)):
-                akey = self.asmc_keys[a]
+            for a in range(len(self.asmc_keys)-1):
+                akey = self.asmc_keys[a+1]
                 asmc_ens[akey]['mean'] = means[a]
                 asmc_ens[akey]['std'] = stds[a]
         else:
+            asmc_ens['confusion']['median'] = np.median(confusions,axis=0)
+            asmc_ens['confusion']['5pc'] = np.percentile(confusions,5,axis=0)
+            asmc_ens['confusion']['16pc'] = np.percentile(confusions,16,axis=0)
+            asmc_ens['confusion']['84pc'] = np.percentile(confusions,84,axis=0)
+            asmc_ens['confusion']['95pc'] = np.percentile(confusions,95,axis=0)
+
             medians = np.median(values,axis=1)
             pcs_05 = np.percentile(values,5,axis=1)
             pcs_16 = np.percentile(values,16,axis=1)
             pcs_84 = np.percentile(values,84,axis=1)
             pcs_95 = np.percentile(values,95,axis=1)
-
-            for a in range(len(self.asmc_keys)):
-                akey = self.asmc_keys[a]
+            
+            for a in range(len(self.asmc_keys)-1):
+                akey = self.asmc_keys[a+1]
                 asmc_ens[akey]['median'] = medians[a]
                 asmc_ens[akey]['5pc'] = pcs_05[a]
                 asmc_ens[akey]['16pc'] = pcs_16[a]
                 asmc_ens[akey]['84pc'] = pcs_84[a]
                 asmc_ens[akey]['95pc'] = pcs_95[a]
-                
+                    
+        del values,confusions
+        
         return asmc_ens
     ###################
 
