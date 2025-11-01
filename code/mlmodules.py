@@ -255,8 +255,7 @@ class SoftMax(Module,MLUtilities):
         return dLdZ
 
     def predict(self):
-        out = self.one_hot(self.rv(np.argmax(self.A,axis=0)+1),self.A.shape[0]) # (K,n_sample)
-        return out
+        return self.A if self.net_type == 'reg' else self.one_hot(self.rv(np.argmax(self.A,axis=0)+1),self.A.shape[0]) # (K,n_sample)
 #################
 
 #################################
