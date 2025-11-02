@@ -281,6 +281,25 @@ class MLUtilities(object):
     ###################
 
     ###################
+    def prime_factors(self,n):
+        """Returns all the prime factors of a positive integer. 
+           Taken from https://stackoverflow.com/questions/23287/algorithm-to-find-largest-prime-factor-of-a-number/412942#412942
+        """
+        factors = []
+        d = 2
+        while n > 1:
+            while n % d == 0:
+                factors.append(d)
+                n = n//d
+            d = d + 1
+            if d*d > n:
+                if n > 1: factors.append(n)
+                break
+        return np.array(factors)
+    ###################
+    
+    
+    ###################
     # helper functions to re-package images into vectors
     ###################
     def unroll(self,I):
@@ -292,36 +311,46 @@ class MLUtilities(object):
         I3 = I[:n,:n]
         return [I0,I1,I2,I3]
     ###################
-
+    
     ###################
     def vortex_unroll(self,in_list,first_use=True):
-        """ Binary recursive clockwise unroll. Expect in_list to be list of numpy arrays of shape (2**m,2**m) for integer m. """
+        """ Binary recursive clockwise unroll. Expect in_list to be list of numpy arrays of shape (D,D) for integer D. 
+            If D is odd, reverts to standard numpy flatten, else performs vortex unrolling.
+        """
         if len(in_list) == 0:
             raise Exception('Need non-empty list in vortex_unroll()')
-        m = int(np.rint(np.log2(in_list[0].shape[0])))
+        
+        out_list = []
+        D = in_list[0].shape[0]
+        
         if first_use:
             for I in in_list:
-                if I.shape != (2**m,2**m):
+                if I.shape != (D,D):
                     err_str = 'Incompatible matrix detected in binary_recursive_unroll(). '
-                    err_str += "Expecting ({0:d},{0:d}), found ".format(2**m)
+                    err_str += "Expecting ({0:d},{0:d}), found ".format(D)
                     err_str += '(' + ','.join([str(i) for i in I.shape])  + ')'
                     raise Exception(err_str)
-        out_list = []
-        if m > 0:
+                
+        if (D % 2) != 0:
+            for I in in_list:
+                out_list.append(I.flatten())
+            out_list = np.array(out_list).flatten()
+        else:
+            pfs = self.prime_factors(D)
+            m = np.where(pfs == 2)[0].size # guaranteed m > 0
             for I in in_list:
                 Js = self.unroll(I)
                 for J in Js:
                     out_list.append(J)
             out_list = self.vortex_unroll(out_list,first_use=False)
-        else:
-            for I in in_list:
-                out_list.append(I)
+            
         return np.squeeze(np.array(out_list))
     ###################
 
+    
     ###################
     def vortex_package(self,X):
-        """ Re-package array of matrices X of shape (D,D,nsamp) with D=2**M for integer M,
+        """ Re-package array of matrices X of shape (D,D,nsamp)
             into array of shape (D**2,nsamp), where each D x D matrix is unrolled using 
             vortex_unroll which partially preserves spatial coherence.
         """
@@ -330,9 +359,6 @@ class MLUtilities(object):
         if X.shape[0] != X.shape[1]:
             raise Exception("vortex_package() needs input of shape (D,D,nsamp).")
         D = X.shape[0]
-        M = int(np.rint(np.log2(D)))
-        if D != 2**M:
-            raise Exception("vortex_package() needs input of shape (D,D,nsamp) with D=2**M. Detected D = {0:d} instead".format(D))
 
         nsamp = X.shape[2]
         X_out = np.zeros((nsamp,D**2),dtype=X.dtype) # will be transposed later
