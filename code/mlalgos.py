@@ -1390,11 +1390,15 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 predictions[r] = ypred
                 net = None
 
-            Ypred = np.rint(self.step_fun(np.sum(self.weights*predictions.T,axis=-1).T - self.threshold))
+            A = np.sum(self.weights*predictions.T,axis=-1).T # (K,n_sample)
+            if A.shape[0] == 1:
+                Ypred = np.rint(self.step_fun(A - self.threshold))
+                if self.neg_labels:
+                    # convert 0 to -1 if needed.
+                    Ypred[Ypred < 1e-4] = -1.0
+            else:
+                Ypred = self.one_hot(self.rv(np.argmax(A,axis=0)+1),A.shape[0])
             
-            if self.neg_labels:
-                # convert 0 to -1 if needed.
-                Ypred[Ypred < 1e-4] = -1.0
             
         return Ypred
     #########################################
