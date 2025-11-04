@@ -924,10 +924,13 @@ class BuildNN(Module,MLUtilities,Utilities):
                             .format(self.n_samp),self.logfile)
             self.print_this("... fraction {0:.3f} ({1:d} samples) will be used for training"
                             .format(self.train_frac,self.n_train),self.logfile)
-            if self.test_type == 'perc':
-                self.print_this("... will use residual percentiles for hyperparameter comparison",self.logfile)
+            if self.loss_type == 'square':
+                if self.test_type == 'perc':
+                    self.print_this("... will use residual percentiles for hyperparameter comparison",self.logfile)
+                else:
+                    self.print_this("... will use mean squared error for hyperparameter comparison",self.logfile)
             else:
-                self.print_this("... will use mean squared error for hyperparameter comparison",self.logfile)
+                self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
         
         self.rng = np.random.RandomState(self.seed)
         
