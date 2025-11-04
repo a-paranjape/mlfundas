@@ -245,7 +245,6 @@ class MLUtilities(object):
                 akey = self.asmc_keys[a+1]
                 values[a,n] = asmc_this[akey]
             del net_this
-            print(n,values[:,n])
 
         if N_ens <= N_ens_thresh:
             asmc_mean = self.assess_multi_classification(neo.predict(X),Y)
