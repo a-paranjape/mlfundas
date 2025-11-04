@@ -126,7 +126,7 @@ class MLUtilities(object):
     ###################
 
     ###################
-    def assess_classification_ensemble(self,neo,X,Y,N_ens_thresh=10):
+    def assess_classification_ensemble(self,neo,X,Y,N_ens_thresh=1000000):
         """ Assess binary classification output for network ensemble. 
             Expect neo to be NetworkEnsembleObject instance, compatible with 
             features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (1,nsamp)).
@@ -149,11 +149,12 @@ class MLUtilities(object):
             del net_this
 
         if N_ens <= N_ens_thresh:
+            asc_mean = self.assess_classification(neo.predict(X),Y,neg_labels=neo.neg_labels)
             means = np.mean(values,axis=1)
             stds = np.std(values,axis=1)
             for a in range(len(self.asc_keys)):
                 akey = self.asc_keys[a]
-                asc_ens[akey]['mean'] = means[a]
+                asc_ens[akey]['mean'] = asc_mean[akey] # means[a]
                 asc_ens[akey]['std'] = stds[a]
         else:
             medians = np.median(values,axis=1)
@@ -221,7 +222,7 @@ class MLUtilities(object):
 
 
     ###################
-    def assess_multi_classification_ensemble(self,neo,X,Y,N_ens_thresh=10):
+    def assess_multi_classification_ensemble(self,neo,X,Y,N_ens_thresh=1000000):
         """ Assess multi-class classification output for network ensemble. 
             Expect neo to be NetworkEnsembleObject instance, compatible with 
             features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (K,nsamp)).
@@ -244,15 +245,17 @@ class MLUtilities(object):
                 akey = self.asmc_keys[a+1]
                 values[a,n] = asmc_this[akey]
             del net_this
+            print(n,values[:,n])
 
         if N_ens <= N_ens_thresh:
-            asmc_ens['confusion']['mean'] = np.mean(confusions,axis=0)
+            asmc_mean = self.assess_multi_classification(neo.predict(X),Y)
+            asmc_ens['confusion']['mean'] = asmc_mean['confusion'] #np.mean(confusions,axis=0)
             asmc_ens['confusion']['std'] = np.std(confusions,axis=0)
             means = np.mean(values,axis=1)
             stds = np.std(values,axis=1)
             for a in range(len(self.asmc_keys)-1):
                 akey = self.asmc_keys[a+1]
-                asmc_ens[akey]['mean'] = means[a]
+                asmc_ens[akey]['mean'] = asmc_mean[akey] # means[a]
                 asmc_ens[akey]['std'] = stds[a]
         else:
             asmc_ens['confusion']['median'] = np.median(confusions,axis=0)
