@@ -416,10 +416,11 @@ class MLUtilities(object):
 
 
     ###################
-    def KLGauss(self,X1,X2):
+    def KLGauss(self,X1,X2,base=None):
         """ Calculate Kullbach-Liebler divergence D(X1||X2) between two data sets, assuming each is Gaussian distributed.
             Currently assumes cov(X2) is invertible.
             -- X1, X2: data sets of shape (d,n1), (d,n2) respectively.
+            -- base: None or positive int, base to calculate log. Default None for nats.
             Returns scalar value of KL divergence.
         """
         nd = X1.shape[0]
@@ -432,18 +433,19 @@ class MLUtilities(object):
         mu2 = np.mean(X2,axis=1)
         cov2 = np.cov(X2)
 
-        kld = self.KLGauss_Dist(mu1,mu2,cov1,cov2)
+        kld = self.KLGauss_Dist(mu1,mu2,cov1,cov2,base=base)
         
         return kld
     ###################
 
     ###################
-    def KLGauss_Dist(self,mu1,mu2,cov1,cov2):
+    def KLGauss_Dist(self,mu1,mu2,cov1,cov2,base=None):
         """ Calculate Kullbach-Liebler divergence D(N1||N2) between two Gaussian distributions
             with (mean,cov) given by (mu1,cov1) and (mu2,cov2), respectively.
             Currently assumes cov2 is invertible.
             -- mu1, mu2: means of shape (d,).
             -- cov1,cov2: covariance matrices of shape (d,d)
+            -- base: None or positive int, base to calculate log. Default None for nats.
             Returns scalar value of KL divergence.
         """
         nd = mu1.size
@@ -465,6 +467,12 @@ class MLUtilities(object):
             kld += cov1/(cov2 + 1e-15) - 1 - np.log(cov1/(cov2 + 1e-15))
 
         kld *= 0.5
+
+        if base is not None:
+            if base <= 0.0:
+                print('Non-positive base not allowed in KLGauss_Dist(). Returning answer in nats.')
+            else:
+                kld /= np.log(base)
 
         return kld
     ###################
