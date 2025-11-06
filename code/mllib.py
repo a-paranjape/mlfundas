@@ -432,6 +432,30 @@ class MLUtilities(object):
         mu2 = np.mean(X2,axis=1)
         cov2 = np.cov(X2)
 
+        kld = self.KLGauss_Dist(mu1,mu2,cov1,cov2)
+        
+        return kld
+    ###################
+
+    ###################
+    def KLGauss_Dist(self,mu1,mu2,cov1,cov2):
+        """ Calculate Kullbach-Liebler divergence D(N1||N2) between two Gaussian distributions
+            with (mean,cov) given by (mu1,cov1) and (mu2,cov2), respectively.
+            Currently assumes cov2 is invertible.
+            -- mu1, mu2: means of shape (d,).
+            -- cov1,cov2: covariance matrices of shape (d,d)
+            Returns scalar value of KL divergence.
+        """
+        nd = mu1.size
+        if mu1.shape != (nd,):
+            raise Exception('Invalid shape for mu1 in KLGauss_Dist().')
+        if mu2.shape != (nd,):
+            raise Exception('Invalid shape for mu2 in KLGauss_Dist().')
+        if cov1.shape != (nd,nd):
+            raise Exception('Invalid shape for cov1 in KLGauss_Dist().')
+        if cov2.shape != (nd,nd):
+            raise Exception('Invalid shape for cov2 in KLGauss_Dist().')
+        
         if nd > 1: 
             inv2 = linalg.inv(cov2)  
             kld = np.dot(mu1-mu2,np.dot(inv2,mu1-mu2))
@@ -441,10 +465,10 @@ class MLUtilities(object):
             kld += cov1/(cov2 + 1e-15) - 1 - np.log(cov1/(cov2 + 1e-15))
 
         kld *= 0.5
-        
+
         return kld
     ###################
-
+    
 
     ###################
     def nongauss_diff(self,X1,X2,mom=3):
