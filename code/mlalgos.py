@@ -1025,7 +1025,7 @@ class BuildNN(Module,MLUtilities,Utilities):
                 ts = np.sqrt(ts)
         else:
             if Y_test.shape[0] == 1:
-                ts = np.where(net.predict(X_test) != Y_test)[0].size/Y_test.shape[1]
+                ts = np.where(np.rint(net.predict(X_test)) != np.rint(Y_test))[0].size/Y_test.shape[1]
             else:
                 asmc = self.assess_multi_classification(net.predict(X_test),Y_test)
                 ts = 1.0 - asmc['accuracy']
