@@ -378,7 +378,8 @@ class Sequential(Module,MLUtilities,Utilities):
         decay_loss = 0.0
         if self.decay_norm == 2:
             for m in self.modules:
-                decay_loss += 0.5*np.sum(m.W**2) if m.W is not None else 0.0
+                decay_loss += np.sum(m.W**2) if m.W is not None else 0.0
+            decay_loss *= 0.5
         elif self.decay_norm == 1:
             for m in self.modules:
                 decay_loss += np.sum(np.fabs(m.W)) if m.W is not None else 0.0
