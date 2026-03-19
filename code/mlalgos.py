@@ -965,7 +965,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         if len(self.wt_decays) < 1:
             if self.verbose:
                 print("Warning: wt_decays should be non-empty list. Setting to [0.0].")
-            self.wt_decays = 0.5
+            self.wt_decays = [0.0]
 
         if (self.loss_type == 'square') & (self.test_type not in ['perc','mse']):
             if self.verbose:
