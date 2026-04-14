@@ -250,7 +250,8 @@ class Sequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulate
-        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,self.threshold,lrelu_slope=self.lrelu_slope,file_stem=self.file_stem,resume=self.resume)
+        self.modules = Modulate(self.n0,self.n_layer,self.atypes,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes,
+                                self.threshold,lrelu_slope=self.lrelu_slope,file_stem=self.file_stem,resume=self.resume)
                 
         if self.verbose:
             self.print_this("... ... expecting data dim = {0:d}, target dim = {1:d}".format(self.n0,self.n_layer[-1]),self.logfile)
@@ -856,7 +857,7 @@ class BuildNN(Module,MLUtilities,Utilities):
     def __init__(self,X=None,Y=None,train_frac=0.5,val_frac=0.2,n_iter=3,standardize_X=True,standardize_Y=True,
                  min_layer=1,max_layer=6,max_ex=2,lrates=None,thresholds=None,
                  target_test_stat=None,loss_type='square',test_type='perc',htypes=None,
-                 neg_labels=True,arch_type=None,wt_decays=[0.0],check_after=300,dream_schedules=None,
+                 neg_labels=True,arch_type=None,wt_decays=[0.0],decay_norm=2,check_after=300,dream_schedules=None,
                  seed=None,file_stem='net',ensemble=False,parallel=False,nproc=4,
                  verbose=True,logfile=None):
         Utilities.__init__(self)
@@ -899,6 +900,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         self.arch_type = arch_type # if not None, string describing architecture type to explore.
                                    # currently accepts ['emulator:deep','emulator:shallow','no_reg','autoenc']
         self.wt_decays = wt_decays
+        self.decay_norm = decay_norm
         self.seed = seed
         self.file_stem = file_stem+'/net'
         Path(self.file_stem).mkdir(parents=True,exist_ok=True) # folder to store temporary networks
@@ -932,6 +934,8 @@ class BuildNN(Module,MLUtilities,Utilities):
                     self.print_this("... will use mean squared error for hyperparameter comparison",self.logfile)
             else:
                 self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
+            if np.any(np.array(self.wt_decays) > 0.0):
+                self.print_this("... weight decays will use norm {0:d}".format(self.decay_norm),self.logfile)
         
         self.rng = np.random.RandomState(self.seed)
         
@@ -1076,7 +1080,7 @@ class BuildNN(Module,MLUtilities,Utilities):
         
         mb_count = int(np.sqrt(self.n_train)) 
         
-        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'decay_norm':self.decay_norm,
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}
         ptrn = {'max_epoch':max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,'dream_schedule':{}}
