@@ -266,14 +266,21 @@ class SoftMax(Module,MLUtilities):
 #################
 class DropNorm(Module,MLUtilities):
     def __init__(self,layer=1,resume=False,p_drop=0.2,rng=None,drop=True):
-        self.layer = layer # for compatibility with weighted modules
-        self.resume = resume
         self.p_drop = p_drop
         self.drop = drop
         self.rng = np.random.RandomState() if rng is None else rng
-        self.layer = layer # useful for tracking save/read filenames
         self.is_norm = True
 
+        # for compatibility with weighted modules 
+        self.layer = layer
+        self.resume = resume
+        self.W = None
+        self.W0 = None
+        
+        # for saving / reading. will be dynamically modified.
+        self.file_stem = 'net'
+
+        
     def drop_fun(self,A):
         self.u = self.rng.rand(A.shape[0],A.shape[1])
         drop = np.ones_like(A)
