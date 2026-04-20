@@ -901,7 +901,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- fixed_width: bool or None (default True)
                             True : each layer l has the same width W_l = W sampled from the range
                             False: each layer l has a width W_l sampled independently from the range
-                            None: layer widths telescope down from max to min (similar to 'autoenc' behaviour of BuildNN)
+                            None: layer widths telescope from data dim to sampled W (similar to 'autoenc' behaviour of BuildNN)
             ------
             :: :: sampled parameters
             ------
