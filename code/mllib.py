@@ -101,8 +101,8 @@ class MLUtilities(object):
             Returns dict with assessment summary having keys:
             TP,TN,FP,FN,accuracy,precision,recall,F1score
         """
-        Ypred_i = np.rint(Ypred)
-        Y_i = np.rint(Y)
+        Ypred_i = np.rint(Ypred).astype(int)
+        Y_i = np.rint(Y).astype(int)
         n_TP = np.where((Ypred_i == 1) & (Y_i == 1))[0].size
         n_TN = np.where((Ypred_i == -neg_labels) & (Y_i == -neg_labels))[0].size
         n_FP = np.where((Ypred_i == 1) & (Y_i == -neg_labels))[0].size
@@ -111,8 +111,8 @@ class MLUtilities(object):
         gc.collect()
 
         accuracy = (n_TP + n_TN)/(n_TP + n_TN + n_FP + n_FN)
-        precision = n_TP/(n_TP + n_FP)
-        recall    = n_TP/(n_TP + n_FN)
+        precision = n_TP/(n_TP + n_FP + 1e-15)
+        recall    = n_TP/(n_TP + n_FN + 1e-15)
         F1score = 2*precision*recall/(precision + recall + 1e-30)
 
         out = {'TP':n_TP,'TN':n_TN,'FP':n_FP,'FN':n_FN,
