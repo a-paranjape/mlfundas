@@ -902,6 +902,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
                             True : each layer l has the same width W_l = W sampled from the range
                             False: each layer l has a width W_l sampled independently from the range
                             None: layer widths telescope from data dim to sampled W (similar to 'autoenc' behaviour of BuildNN)
+            -- fixed_htype: bool (default True)
+                            True : each layer l has the same activation A_l = A sampled from the htypes list
+                            False: each layer l has an activation A_l sampled independently from the htypes list
             ------
             :: :: sampled parameters
             ------
@@ -991,6 +994,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.wt_decays = setup_dict.get('wt_decays',{'min':0.0,'max':0.0})
         self.thresholds = setup_dict.get('thresholds',None)
         self.htypes = setup_dict.get('htypes',None)
+        self.fixed_htype = setup_dict.get('fixed_htype',True)
         self.lrelu_slopes = setup_dict.get('lrelu_slopes',None)
         self.reg_funs = setup_dict.get('reg_funs',None)
         self.p_drops = setup_dict.get('p_drops',None)
@@ -1368,7 +1372,12 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ptrn['dream_schedule'] = sample_ds[c]
 
             htype = sample_htype[c]
-            pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+            # pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
+            if htype is None:
+                pset['atypes'] = [] # this will only happen if L==1
+            else:
+                pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,replace=True).astype(str))
+            pset['atypes'] += [last_atype] 
             
             for it in range(self.n_iter):
                 X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
