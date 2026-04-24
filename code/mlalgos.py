@@ -4,8 +4,11 @@ from utilities import Utilities
 from mllib import MLUtilities
 from mlmodules import gen_filestems
 from mlmodules import *
-import copy,pickle,shutil,gc
+import copy,pickle,shutil,gc,os
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 #############################################
 class Perceptron(MLUtilities,Utilities):
@@ -3472,4 +3475,188 @@ class BuildNN(Module,MLUtilities,Utilities):
             return net
     #############################
 #################################
+
+
+#############################################
+class IllustrateNetwork(Utilities):
+    """ Illustrate architecture of an existing network or network ensemble. """
+    ###################
+    def __init__(self,base_dir,file_stem,ensemble,family,verbose=True,logfile=None):
+        """ Load existing network or network ensemble and create simple graphical illustration of its architecture.
+            -- base_dir: str, path/to/folder where network (ensemble) was originally created from.
+            -- file_stem: str, file stem (relative to base_dir) used for defining location of network (ensemble).
+            -- ensemble: bool, whether location is an ensemble (True) or single network (False).
+            -- family: str; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
+            -- verbose,logfile: usual I/O control
+            Methods:
+            -- 
+        """
+        Utilities.__init__(self)
+        self.base_dir = base_dir
+        self.ensemble = ensemble
+        self.verbose = verbose
+        self.logfile = logfile
+        
+        setup_dict = {}
+        setup_dict['X'] = np.zeros((1,10)) # dummy arrays
+        setup_dict['Y'] = np.zeros((1,10)) # for HyperOpt
+        setup_dict['verbose'] = False
+        setup_dict['ensemble'] = self.ensemble
+        setup_dict['file_stem'] = file_stem
+        setup_dict['family'] = family
+
+        if family != 'seq':
+            raise NotImplementedError("Sorry, only Sequential family currently supported in IllustrateNetwork")
+        
+        original_dir = os.getcwd()
+        try:
+            os.chdir(self.base_dir) # temporarily change to base dir
+            self.hopt = HyperOpt(setup_dict=setup_dict)
+            if ensemble:
+                self.neo = self.hopt.load()
+            else:
+                self.net = self.hopt.load()
+                self.params_train,bts = self.hopt.load_train()
+        finally:
+            os.chdir(original_dir) # change back to original dir
+        
+        return
+    ###################
+
+    ###################
+    def illustrate(self,out_stem='./',out_name='',file_ext='png'):
+        """ Create illustration of loaded network (ensemble). 
+            -- out_stem: str, /path/to/output/folder/ (default cwd). 
+            -- out_name: str, optional prefix for output filename (default '', will create file 'illustration.'+file_ext).
+            -- file_ext: str, output file extension (default 'png')
+        """
+        Path(out_stem).mkdir(parents=True,exist_ok=True) # folder to store figure
+        
+        if self.ensemble:
+            n_nets = len(self.neo.keys)
+            if n_nets == 1:
+                n_cols = 1
+            elif n_nets <= 6:
+                n_cols = 2
+            else:
+                n_cols = 3
+            n_rows = int(np.ceil(n_nets/n_cols))
+            
+            fig = plt.figure(figsize=(5*n_cols,3*n_rows))
+            for n in range(n_nets):
+                key = self.neo.keys[n]
+                ax = plt.subplot(n_rows,n_cols,n+1)
+                self.illustrate_single(self.neo.ensemble[key]['net'].params,ax)            
+        else:
+            fig = plt.figure(figsize=(6,4))
+            ax = plt.subplot(1,1,1)
+            self.illustrate_single(self.net.params,ax)
+
+        separator = '' if out_stem[-1] == '/' else '/'
+        outfile = out_stem + separator + out_name + 'illustration.' + file_ext
+        if self.verbose:
+            self.print_this("Writing to file: "+outfile,self.logfile)
+        plt.savefig(outfile,bbox_inches='tight')
+            
+        return
+    ###################
+
+
+    ###################
+    def illustrate_single(self,params,ax,ec='k',fc='gray',fc_h='peachpuff',lw=0.3,alpha=0.5):
+        """ Create illustration object of single network. 
+            -- params: setup params dict of desired single network
+            --  ax: matplotlib axis object on which to draw
+            -- ec: str, edge color
+            -- fc: str, face color for input and output layers
+            -- fc_h: str, face color for hidden layers
+            -- lw: float, line width of rectangle border
+            -- alpha: float in [0,1), transparency
+        """
+        ax.set_xticks([])              # kill tick marks
+        ax.set_yticks([])
+        ax.set_xlim(-0.1,1.1)
+        ax.set_ylim(-0.1,1.1)
+        
+        rect_bdry = Rectangle((-0.1,-0.1),1.2,1.2,lw=1,edgecolor='k',facecolor='none') # draw outer boundary
+        ax.add_patch(rect_bdry)
+        
+        horz_margin = 0.01 # frac to exclude on left/right
+        vert_margin = 0.05 # frac to exclude on top/bottom
+        loss_space = 0.25  # frac to reserve on right for loss box
+        xfrac = 0.67       # frac of (layer+sep) given to layer
+        Dy_max = 1 - 2*vert_margin # max height of rectangles (as frac)
+        Dy_min = 0.05 # min height of rectangles (as frac)
+        assert (Dy_min < Dy_max)
+        text_off_y = 0.015
+        text_off_x = 0.3
+        
+        ######################
+        # Currently only for Sequential family
+        ######################
+        # draw L rectangles, one for each layer, of equal width
+        # height proportional to layer width for each rectangle
+        L = params['L'] # number of layers excluding input layer
+        # 1 = loss_space + 2*horz_marg + (dx_full/2) + dx_full*(L-1) + (dx_full/2)
+        dx_full = (1 - 2*horz_margin - loss_space)/L
+        dx = dx_full*xfrac
+        xsep = dx_full - dx
+        
+        min_hw,max_hw = np.min(params['n_layer'][:-1]),np.max(params['n_layer'][:-1]) # min,max widths of hidden layers
+        n0 = params['data_dim']
+        nlast = params['n_layer'][-1]
+        
+        W_min = np.min([n0,min_hw]) # don't incldue nlast (in case nlast=1)
+        W_max = np.max([n0,max_hw,nlast])
+        W_ratio = W_max/(W_min + 1e-15)
+        W = np.concatenate(([n0],params['n_layer']))
+        
+        if W_ratio >= 10.0:
+            # log scaling
+            dydw = (Dy_max-Dy_min)/np.log(W_ratio)
+            Dy = Dy_max + dydw*np.log(W/W_max)
+        elif W_ratio >= 3.0:
+            # sqrt scaling
+            dydw = (Dy_max-Dy_min)/np.sqrt(W_max - W_min)
+            Dy = -1.0*np.ones_like(W)
+            Dy[W >= W_min] = Dy_min + dydw*np.sqrt(W[W >= W_min] - W_min)
+            print(Dy,W,W_min)
+        else:
+            # linear scaling
+            dydW = (Dy_max-Dy_min)/(W_max - W_min + 1e-15)
+            Dy = Dy_max + dydW*(W - W_max)
+        # now Dy is (L+1,) array of rectangle heights for each layer
+        Dy[Dy < 0.0] = Dy_min/10
+        
+        vert_offset = vert_margin + 0.5*(Dy_max - Dy) # offset from bottom, chosen to symmetrize vertical location
+
+        # input layer
+        rect = Rectangle((horz_margin,vert_offset[0]),dx/2,Dy[0],lw=lw,edgecolor=ec,facecolor=fc,alpha=alpha)
+        ax.add_patch(rect)
+        ax.text(horz_margin+text_off_x*dx/2,vert_offset[0]+Dy[0]+text_off_y,str(n0),fontsize=8)
+
+        # hidden layers
+        xoff = xsep + dx*0.5
+        for ell in range(1,L):
+            # box
+            rect = Rectangle((horz_margin+xoff,vert_offset[ell]),
+                             dx,Dy[ell],lw=lw,edgecolor=ec,facecolor=fc_h,alpha=alpha)
+            ax.add_patch(rect)
+            # layer width
+            ax.text(horz_margin+xoff+text_off_x*dx,vert_offset[ell]+Dy[ell]+text_off_y,str(params['n_layer'][ell-1]),fontsize=8)
+            # activation
+            ax.text(horz_margin+xoff+text_off_x*dx,0.475,params['atypes'][ell-1],fontsize=9,rotation=90)
+            xoff += dx_full
+            
+        # output layer
+        rect = Rectangle((horz_margin+xoff,vert_offset[L]),dx/2,Dy[L],lw=lw,edgecolor=ec,facecolor=fc,alpha=alpha)
+        ax.add_patch(rect)
+        ax.text(horz_margin+xoff+text_off_x*dx/2,vert_offset[L]+Dy[L]+text_off_y,str(params['n_layer'][-1]),fontsize=8)
+
+        ax.text(horz_margin+xoff+text_off_x*dx/2 + 0.3*loss_space,0.5,"$\\mathcal{L} = $"+params['loss_type'],fontsize=10)
+        
+        return 
+    ###################
+    
+#############################################
 
