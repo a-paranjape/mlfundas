@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib import gridspec
 
 #############################################
 class Perceptron(MLUtilities,Utilities):
@@ -3486,10 +3487,11 @@ class IllustrateNetwork(Utilities):
             -- base_dir: str, path/to/folder where network (ensemble) was originally created from.
             -- file_stem: str, file stem (relative to base_dir) used for defining location of network (ensemble).
             -- ensemble: bool, whether location is an ensemble (True) or single network (False).
-            -- family: str; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
-            -- verbose,logfile: usual I/O control
+            -- family: str; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN).
+            -- verbose,logfile: usual I/O control.
             Methods:
-            -- 
+            -- illustrate: top-level method to generate and combine graphics and write output
+            -- illustrate_single: workhorse to generate graphic for single network. Called by self.illustrate.
         """
         Utilities.__init__(self)
         self.base_dir = base_dir
@@ -3534,22 +3536,24 @@ class IllustrateNetwork(Utilities):
         
         if self.ensemble:
             n_nets = len(self.neo.keys)
-            if n_nets == 1:
+            if n_nets <= 2:
                 n_cols = 1
             elif n_nets <= 6:
-                n_cols = 2
-            else:
                 n_cols = 3
+            else:
+                n_cols = 4
             n_rows = int(np.ceil(n_nets/n_cols))
             
             fig = plt.figure(figsize=(5*n_cols,3*n_rows))
+            gs = gridspec.GridSpec(n_rows,n_cols,height_ratios=[1]*n_rows,width_ratios=[1]*n_cols,hspace=0.02,wspace=0.02)
             for n in range(n_nets):
                 key = self.neo.keys[n]
-                ax = plt.subplot(n_rows,n_cols,n+1)
-                self.illustrate_single(self.neo.ensemble[key]['net'].params,ax)            
+                # ax = plt.subplot(n_rows,n_cols,n+1)
+                ax = plt.subplot(gs[n])
+                self.illustrate_single(self.neo.ensemble[key]['net'].params,ax,weight=self.neo.weights[n])
         else:
-            fig = plt.figure(figsize=(6,4))
-            ax = plt.subplot(1,1,1)
+            fig = plt.figure(figsize=(5,3))
+            ax = plt.subplot(111)
             self.illustrate_single(self.net.params,ax)
 
         separator = '' if out_stem[-1] == '/' else '/'
@@ -3563,7 +3567,7 @@ class IllustrateNetwork(Utilities):
 
 
     ###################
-    def illustrate_single(self,params,ax,ec='k',fc='gray',fc_h='peachpuff',lw=0.3,alpha=0.5):
+    def illustrate_single(self,params,ax,ec='k',fc='gray',fc_h='peachpuff',lw=0.3,alpha=0.5,weight=None):
         """ Create illustration object of single network. 
             -- params: setup params dict of desired single network
             --  ax: matplotlib axis object on which to draw
@@ -3572,24 +3576,25 @@ class IllustrateNetwork(Utilities):
             -- fc_h: str, face color for hidden layers
             -- lw: float, line width of rectangle border
             -- alpha: float in [0,1), transparency
+            -- weight: None (default) or float (for ensemble members)
         """
         ax.set_xticks([])              # kill tick marks
         ax.set_yticks([])
-        ax.set_xlim(-0.1,1.1)
-        ax.set_ylim(-0.1,1.1)
+        ax.set_xlim(0,1)
+        ax.set_ylim(0,1)
         
-        rect_bdry = Rectangle((-0.1,-0.1),1.2,1.2,lw=1,edgecolor='k',facecolor='none') # draw outer boundary
+        rect_bdry = Rectangle((0,0),1,1,lw=1,edgecolor='k',facecolor='none') # draw outer boundary
         ax.add_patch(rect_bdry)
         
-        horz_margin = 0.01 # frac to exclude on left/right
-        vert_margin = 0.05 # frac to exclude on top/bottom
+        horz_margin = 0.05 # frac to exclude on left/right
+        vert_margin = 0.10 # frac to exclude on top/bottom
         loss_space = 0.25  # frac to reserve on right for loss box
-        xfrac = 0.67       # frac of (layer+sep) given to layer
+        xfrac = 0.6        # frac of (layer+sep) given to layer
         Dy_max = 1 - 2*vert_margin # max height of rectangles (as frac)
         Dy_min = 0.05 # min height of rectangles (as frac)
         assert (Dy_min < Dy_max)
         text_off_y = 0.015
-        text_off_x = 0.3
+        text_off_x = 0.25
         
         ######################
         # Currently only for Sequential family
@@ -3620,7 +3625,6 @@ class IllustrateNetwork(Utilities):
             dydw = (Dy_max-Dy_min)/np.sqrt(W_max - W_min)
             Dy = -1.0*np.ones_like(W)
             Dy[W >= W_min] = Dy_min + dydw*np.sqrt(W[W >= W_min] - W_min)
-            print(Dy,W,W_min)
         else:
             # linear scaling
             dydW = (Dy_max-Dy_min)/(W_max - W_min + 1e-15)
@@ -3645,7 +3649,7 @@ class IllustrateNetwork(Utilities):
             # layer width
             ax.text(horz_margin+xoff+text_off_x*dx,vert_offset[ell]+Dy[ell]+text_off_y,str(params['n_layer'][ell-1]),fontsize=8)
             # activation
-            ax.text(horz_margin+xoff+text_off_x*dx,0.475,params['atypes'][ell-1],fontsize=9,rotation=90)
+            ax.text(horz_margin+xoff+text_off_x*dx,0.475,params['atypes'][ell-1],fontsize=8,rotation=90)
             xoff += dx_full
             
         # output layer
@@ -3653,7 +3657,10 @@ class IllustrateNetwork(Utilities):
         ax.add_patch(rect)
         ax.text(horz_margin+xoff+text_off_x*dx/2,vert_offset[L]+Dy[L]+text_off_y,str(params['n_layer'][-1]),fontsize=8)
 
-        ax.text(horz_margin+xoff+text_off_x*dx/2 + 0.3*loss_space,0.5,"$\\mathcal{L} = $"+params['loss_type'],fontsize=10)
+        ax.text(1-0.9*loss_space,0.5,"$\\mathcal{L} = $"+params['loss_type'],fontsize=10,color='crimson')
+
+        if weight is not None:
+            ax.text(0.77,0.9,"wt = {0:.3f}".format(weight),fontsize=10,color='navy')
         
         return 
     ###################
