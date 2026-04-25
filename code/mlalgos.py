@@ -1635,7 +1635,48 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             
         return Ypred
     #########################################
-        
+
+
+    #########################################
+    def display_results(self,show_keys=['L','wt_decay','n_layer','atypes','reg_fun']):
+        """ Display results of loaded NetworkEnsembleObject, focusing on given keys. """
+        print('Best test stats:')
+        for key in self.keys:
+            print('... '+key+': {0:.3e}'.format(self.ensemble[key]['teststat']))
+            for pkey in show_keys:
+                print('... ... '+pkey+':',self.ensemble[key]['net'].params[pkey])
+                if self.ensemble[key]['net'].params[pkey] == 'drop': 
+                    print('... ... p_drop: {0:.3e}'.format(self.ensemble[key]['net'].params['p_drop']))
+            print('... ... lrate: {0:.3e}'.format(self.ensemble[key]['ptrain']['lrate']))
+
+        print('No. of free params optimized:')
+        ens_avg_Nwts = []
+        for key in self.keys:
+            nwts_this = self.ensemble[key]['net'].calc_N_freeparams()
+            print('... '+key+': {0:d}'.format(nwts_this))
+            ens_avg_Nwts.append(nwts_this)
+        ens_avg_Nwts = np.mean(ens_avg_Nwts)
+        print('... average: {0:.1f}'.format(ens_avg_Nwts))
+
+        plt.figure(figsize=(3,3))
+        plt.yscale('log')
+        plt.xscale('log')
+        plt.xlabel('epoch')
+        plt.ylabel('loss')
+        for n in range(len(self.keys)):
+            key = self.keys[n]
+            net_this = self.ensemble[key]['net']
+            plt.plot(net_this.epochs,net_this.training_loss,'k-',lw=0.5,label='training' if n==0 else None)
+            plt.plot(net_this.epochs,net_this.val_loss,'r-',lw=1,label='validation' if n==0 else None)
+            del net_this
+        plt.legend()
+        plt.show()
+
+        return
+    #########################################
+
+
+    
 #################################
 
 
