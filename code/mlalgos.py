@@ -1638,7 +1638,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
 
 
     #########################################
-    def display_summary(self,show_keys=['L','wt_decay','n_layer','atypes','reg_fun']):
+    def display_summary(self,show_keys=['L','wt_decay','n_layer','atypes','reg_fun'],train_keys=['lrate']):
         """ Display results of loaded NetworkEnsembleObject, focusing on given keys. """
         print('Best test stats:')
         for key in self.keys:
@@ -1647,7 +1647,12 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 print('... ... '+pkey+':',self.ensemble[key]['net'].params[pkey])
                 if self.ensemble[key]['net'].params[pkey] == 'drop': 
                     print('... ... p_drop: {0:.3e}'.format(self.ensemble[key]['net'].params['p_drop']))
-            print('... ... lrate: {0:.3e}'.format(self.ensemble[key]['ptrain']['lrate']))
+            for tkey in train_keys:
+                tval = self.ensemble[key]['ptrain'][tkey]
+                if np.isscalar(tval):
+                    print('... ... '+tkey+': {0:.3e}'.format(tval))
+                else:
+                    print('... ... '+tkey+':',tval)
 
         print('No. of free params optimized:')
         ens_avg_Nwts = []
