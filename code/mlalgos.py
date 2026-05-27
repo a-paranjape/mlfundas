@@ -942,10 +942,13 @@ class HyperOpt(Module,MLUtilities,Utilities):
                         If not None, expect dict with structure 
                         {'min': float (e.g., 0.4), 'max': float (e.g., 0.6)}
                         None will default to 0.5.
-            -- dream_schedules: None (default) or list of dicts (to be randomly sampled) containing following params defining periodic 'dream' state during training
-                -- dream_every:int; enter one dream epoch every 'dream_every' normal epochs (default 10, i.e. dream state is 10% of total training duration)
-                -- corrupt_X:float; fraction of each input feature to be replaced by output of basis layer during dreaming (default 0.8)
-                -- corrupt_Y:float; fraction of labels to be shuffled during dreaming (default 0.1)
+            -- dream_schedules: None (default) or dict of dicts (defining sampled ranges) containing following keys defining periodic 'dream' state during training
+                -- dream_every:{'min': int (e.g., 10), 'max': int (e.g., 30)}
+                               enter one dream epoch every 'dream_every' normal epochs (default 10, i.e. dream state is 10% of total training duration)
+                -- corrupt_X:{'min': float (e.g., 0.7), 'max': float (e.g., 0.9)}
+                             fraction of each input feature to be replaced by output of basis layer during dreaming (default 0.8)
+                -- corrupt_Y:{'min': float (e.g., 0.05), 'max': float (e.g., 0.15)}
+                             fraction of labels to be shuffled during dreaming (default 0.1)
             ------
             :: :: I/O
             -- verbose: bool (default True); whether or not to generate verbose output.
@@ -1002,8 +1005,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.lrelu_slopes = setup_dict.get('lrelu_slopes',None)
         self.reg_funs = setup_dict.get('reg_funs',None)
         self.p_drops = setup_dict.get('p_drops',None)
-        dream_schedules = setup_dict.get('dream_schedules',None)
-        self.dream_schedules = [None] if ((dream_schedules is None) | (self.family != 'seq')) else dream_schedules 
+        self.dream_schedules = setup_dict.get('dream_schedules',None)
+        # dream_schedules = setup_dict.get('dream_schedules',None)
+        # self.dream_schedules = [None] if ((dream_schedules is None) | (self.family != 'seq')) else dream_schedules 
         
         file_stem = setup_dict.get('file_stem','net')        
         self.file_stem = file_stem+'/net'
@@ -1322,12 +1326,12 @@ class HyperOpt(Module,MLUtilities,Utilities):
         if self.family_name == 'BiSequential':
             pset['theta_dim'] = self.theta_dim
 
-        # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops] --> N_lhc in number
+        # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops,dream_schedules] --> N_lhc in number
         # ** pay attention to behaviour of fixed_width:
         # -- if True, then LHC will behave as usual, with one width per config
         # -- if None, then sampled width will be interpreted as basis size and config will have telescoping widths determined by length and data dims
         # -- if False, then width will be inflated to *vector* with additional random samples: one value for each layer
-        # discrete sampling for: {htypes,reg_funs,dream_schedules} --> N_discrete in number
+        # discrete sampling for: {htypes,reg_funs} --> N_discrete in number
         # strategy:
         # -- create LHC with max_config samples
         # -- create independent lists of length max_config (rng.choice with replacement) for each discretely sampled parameter
@@ -1338,6 +1342,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
                       self.lglrates['min'],self.wt_decays['min'],self.lrelu_slopes['min'],self.thresholds['min'],self.p_drops['min']]
         param_maxs = [self.layers['max']+1,self.widths['max']+1, # note +1: samples will be float, then rounded down using int()
                       self.lglrates['max'],self.wt_decays['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max']]
+        if self.dream_schedules is not None:
+            for key in ['dream_every','corrupt_X','corrupt_Y']:
+                param_mins.append(self.dream_schedules[key]['min'])
+                param_maxs.append(self.dream_schedules[key]['max'])
         N_lhc = len(param_mins)
         
         params = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
@@ -1345,7 +1353,13 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         sample_htype = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
         sample_rf = self.rng.choice(self.reg_funs,size=self.max_config,replace=True).astype(str)
-        sample_ds = self.rng.choice(self.dream_schedules,size=self.max_config,replace=True)
+        # sample_ds = self.rng.choice(self.dream_schedules,size=self.max_config,replace=True)
+        sample_ds = [None]*self.max_config
+        if self.dream_schedules is not None:
+            for c in range(self.max_config):
+                sample_ds[c] = {'dream_every':int(params[c,-3]),
+                                'corrupt_X':params[c,-2],
+                                'corrupt_Y':params[c,-1]}
         
         cnt_max = self.n_iter*self.max_config
         
