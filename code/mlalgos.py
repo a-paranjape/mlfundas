@@ -1661,6 +1661,9 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                 print('... ... '+pkey+':',self.ensemble[key]['net'].params[pkey])
                 if self.ensemble[key]['net'].params[pkey] == 'drop': 
                     print('... ... p_drop: {0:.3e}'.format(self.ensemble[key]['net'].params['p_drop']))
+                if pkey == 'atypes':
+                    if 'lrelu' in self.ensemble[key]['net'].params[pkey]: 
+                        print('... ... lrelu_slope: {0:.3e}'.format(self.ensemble[key]['net'].params['lrelu_slope']))
             for tkey in train_keys:
                 tval = self.ensemble[key]['ptrain'][tkey]
                 if np.isscalar(tval):
