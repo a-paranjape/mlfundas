@@ -1665,7 +1665,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
 
 
     #########################################
-    def display_summary(self,show_keys=['L','wt_decay','n_layer','atypes','reg_fun'],train_keys=['lrate']):
+    def display_summary(self,show_keys=['L','wt_decay','n_layer','atypes','reg_fun'],train_keys=['lrate'],return_avg_wts=False):
         """ Display results of loaded NetworkEnsembleObject, focusing on given keys. """
         print('Best test stats:')
         for key in self.keys:
@@ -1707,7 +1707,10 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         plt.legend()
         plt.show()
 
-        return
+        if return_avg_wts:
+            return ens_avg_Nwts
+        else:
+            return
     #########################################
 
 
