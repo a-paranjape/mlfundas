@@ -403,12 +403,14 @@ class Sequential(Module,MLUtilities,Utilities):
                -- 'val_frac':float, fraction of data used for validation (early stopping) (default 0.2)
                -- 'check_after':int, epoch after which early stopping check are active, also equal to duration of check (default 10)
                -- 'dream_schedule': None (default) or dict containing following params defining periodic 'dream' state during training
-                   -- 'dream_every':int, enter one dream epoch every 'dream_every' normal epochs (default 10, i.e. dream state is 10% of total training duration)
+                   -- 'dream_every':int, enter one dream epoch every 'dream_every' normal epochs 
+                                    (default 10, i.e. dream state is 10% of total training duration)
                    -- 'corrupt_X':float, fraction of each input feature to be replaced by output of basis layer during dreaming (default 0.8)
                    -- 'corrupt_Y':float, fraction of labels to be shuffled during dreaming (default 0.1)
+                   -- 'slowdown':float >= 1.0, factor by which to slow down learning rate in dream state (default 1.0)
         """
         max_epoch = params.get('max_epoch',100)
-        lrate = params.get('lrate',0.005)
+        lrate_default = params.get('lrate',0.005)
         mb_count = params.get('mb_count',1)
         val_frac = params.get('val_frac',0.2) # fraction of input data to use for validation
         check_after = params.get('check_after',10)
@@ -424,6 +426,7 @@ class Sequential(Module,MLUtilities,Utilities):
             dream_every = dream_schedule.get('dream_every',10)
             corrupt_X = dream_schedule.get('corrupt_X',0.8)
             corrupt_Y = dream_schedule.get('corrupt_Y',0.1)
+            slowdown = dream_schedule.get('slowdown',1.0)
 
             if (corrupt_X < 0.0) | (corrupt_X > 1.0):
                 raise Exception("need 0.0 <= corrupt_X <= 1.0 when dreaming")
@@ -501,9 +504,6 @@ class Sequential(Module,MLUtilities,Utilities):
         self.val_loss = np.zeros(max_epoch)
         val_loss_best = 1e30
         ind_shuff = np.arange(n_samp)
-
-        if dream_schedule is not None:
-            t_dream = 1 # counter for tracking dream state epochs
         
         for t in range(max_epoch):
             self.rng.shuffle(ind_shuff)
@@ -515,7 +515,7 @@ class Sequential(Module,MLUtilities,Utilities):
             #######################
             # modify features and labels in dream state epochs
             if dream_schedule is not None:
-                if t_dream == dream_every:
+                if (t+1) % dream_every == 0:
                     # expose last hidden layer with output size n_last_layer
                     hidden = self.extract_hidden_features(layer=None) # layer=None extracts last hidden layer (or basis functions)
 
@@ -562,9 +562,11 @@ class Sequential(Module,MLUtilities,Utilities):
                     ind_corrupt = None
                     ind_corrupt_shuff = None
                     
-                    t_dream = 0 # reset dream counter
-                
-                t_dream += 1
+                    lrate = lrate_default/(slowdown + 1e-15) # lrate is slowed down in waking state
+                else:
+                    lrate = 1.0*lrate_default # lrate is default in waking state
+            else:
+                lrate = 1.0*lrate_default # lrate is default when no dreaming requested
             #######################
             
             for b in range(mb_count):
@@ -876,8 +878,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ------
             :: :: training sample
             ------
-            -- train_frac: float (default 0.8); fraction of input samples to use for training+validation, remaining used for hyperparam/architecture comparison.
-            -- val_frac: float (default 0.2); fraction of train_frac to use for early-stopping validation. Set to zero to switch off validation check. 
+            -- train_frac: float (default 0.8); fraction of input samples to use for training+validation, 
+                           remaining used for hyperparam/architecture comparison.
+            -- val_frac: float (default 0.2); fraction of train_frac to use for early-stopping validation. 
+                         Set to zero to switch off validation check. 
             -- loss_type: str (default 'square'); one of ['square','hinge','nll','nllm'] depending on problem type.
             -- neg_labels: bool (default True); are actual labels {-1,+1} (True) or {0,1} (False) for binary classification.
             ------
@@ -899,9 +903,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
                ** Note: ** Total number of networks trained will be (n_iter * max_config)
 
             -- ensemble: bool (default False); whether or not to use ensemble of networks.
-            -- ensemble_size: int (default 5); number of top networks to use in ensemble. Should not be larger than max_config. (Only used if ensemble is True.)
-            -- parallel: bool (default False); whether or not to parallelize analysis of each configuration.
-            -- nproc: int (default 4); number of concurrent processes to spawn. (Only used if parallel is True.)
+            -- ensemble_size: int (default 5); number of top networks to use in ensemble. Should not be larger than max_config. 
+                              (Only used if ensemble is True.)
+            -- parallel: bool (default False); whether or not to parallelize analysis of each configuration. (CURRENTLY REDUNDANT.)
+            -- nproc: int (default 4); number of concurrent processes to spawn. 
             -- fixed_width: bool or None (default True)
                             True : each layer l has the same width W_l = W sampled from the range
                             False: each layer l has a width W_l sampled independently from the range
@@ -942,13 +947,18 @@ class HyperOpt(Module,MLUtilities,Utilities):
                         If not None, expect dict with structure 
                         {'min': float (e.g., 0.4), 'max': float (e.g., 0.6)}
                         None will default to 0.5.
-            -- dream_schedules: None (default) or dict of dicts (defining sampled ranges) containing following keys defining periodic 'dream' state during training
+            -- dream_schedules: None (default) or dict of dicts (defining sampled ranges) 
+                                containing following keys defining periodic 'dream' state during training
+                                (excluding a key sets it to default).
                 -- dream_every:{'min': int (e.g., 10), 'max': int (e.g., 30)}
-                               enter one dream epoch every 'dream_every' normal epochs (default 10, i.e. dream state is 10% of total training duration)
+                               enter one dream epoch every 'dream_every' normal epochs 
+                               (default 10, i.e. dream state is 10% of total training duration)
                 -- corrupt_X:{'min': float (e.g., 0.7), 'max': float (e.g., 0.9)}
                              fraction of each input feature to be replaced by output of basis layer during dreaming (default 0.8)
                 -- corrupt_Y:{'min': float (e.g., 0.05), 'max': float (e.g., 0.15)}
                              fraction of labels to be shuffled during dreaming (default 0.1)
+                -- slowdown:{'min': float (e.g., 1e0), 'max': float (e.g., 1e2)}
+                             factor by which learning rate is slowed down during dreaming (default 1.0)
             ------
             :: :: I/O
             -- verbose: bool (default True); whether or not to generate verbose output.
@@ -1120,10 +1130,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 print("Warning: ensemble currently only available for Sequential family in HyperOpt. Setting ensemble = False.")
             self.ensemble = False
             
-        if self.ensemble & (self.ensemble_size > self.max_config):
+        if self.ensemble & (self.ensemble_size > self.n_iter*self.max_config):
             if self.verbose:
-                print("Warning: ensemble_size should be <= max_config in HyperOpt. Setting to max_config = {0:d}.".format(self.max_config))
-            self.ensemble_size = self.max_config
+                print("Warning: ensemble_size should be <= n_iter*max_config in HyperOpt. Setting to n_iter*max_config = {0:d}."
+                      .format(self.n_iter*self.max_config))
+            self.ensemble_size = self.n_iter*self.max_config
 
 
         self.check_dict(self.layers,'layers',int,1,np.inf)        
@@ -1343,9 +1354,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
         param_maxs = [self.layers['max']+1,self.widths['max']+1, # note +1: samples will be float, then rounded down using int()
                       self.lglrates['max'],self.wt_decays['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max']]
         if self.dream_schedules is not None:
-            for key in ['dream_every','corrupt_X','corrupt_Y']:
-                param_mins.append(self.dream_schedules[key]['min'])
-                param_maxs.append(self.dream_schedules[key]['max'])
+            dream_defaults = {'dream_every':10,'corrupt_X':0.8,'corrupt_Y':0.1,'slowdown':1.0}
+            for key in dream_defaults.keys():
+                param_mins.append(self.dream_schedules[key]['min'] if key in self.dream_schedules.keys() else dream_defaults[key])
+                param_maxs.append(self.dream_schedules[key]['max'] if key in self.dream_schedules.keys() else dream_defaults[key])
         N_lhc = len(param_mins)
         
         params = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
@@ -1357,9 +1369,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
         sample_ds = [None]*self.max_config
         if self.dream_schedules is not None:
             for c in range(self.max_config):
-                sample_ds[c] = {'dream_every':int(params[c,-3]),
-                                'corrupt_X':params[c,-2],
-                                'corrupt_Y':params[c,-1]}
+                sample_ds[c] = {'dream_every':int(params[c,-4]),
+                                'corrupt_X':params[c,-3],
+                                'corrupt_Y':params[c,-2],
+                                'slowdown': params[c,-1]}
         
         cnt_max = self.n_iter*self.max_config
         
