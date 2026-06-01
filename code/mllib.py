@@ -92,7 +92,7 @@ class MLUtilities(object):
             score = score[0,0]
         return score
     ###################
-
+    
     ###################
     def assess_classification(self,Ypred,Y,neg_labels=True):
         """ Assess binary classification output for predicted labels Ypred and true labels Y.
@@ -135,9 +135,9 @@ class MLUtilities(object):
             containing ensemble (mean,std) or (median,16pc,84pc).
         """
         N_ens = len(neo.keys)
-        asc_ens = ({akey:{'mean':0.0,'std':0.0} for akey in self.asc_keys}
+        asc_ens = ({akey:{'mean':0.0,'std':0.0,'all':None} for akey in self.asc_keys}
                    if N_ens <= N_ens_thresh else
-                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0} for akey in self.asc_keys})
+                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0,'all':None} for akey in self.asc_keys})
         values = np.zeros((len(self.asc_keys),len(neo.keys)),dtype=float)
         for n in range(len(neo.keys)):
             key = neo.keys[n]
@@ -148,6 +148,10 @@ class MLUtilities(object):
                 values[a,n] = asc_this[akey]
             del net_this
 
+        for a in range(len(self.asc_keys)):
+            akey = self.asmc_keys[a]
+            asmc_ens[akey]['all'] = values[a]
+            
         if N_ens <= N_ens_thresh:
             asc_mean = self.assess_classification(neo.predict(X),Y,neg_labels=neo.neg_labels)
             means = np.mean(values,axis=1)
@@ -231,9 +235,9 @@ class MLUtilities(object):
             containing ensemble (mean,std) or (median,16pc,84pc).
         """
         N_ens = len(neo.keys)
-        asmc_ens = ({akey:{'mean':0.0,'std':0.0} for akey in self.asmc_keys}
+        asmc_ens = ({akey:{'mean':0.0,'std':0.0,'all':None} for akey in self.asmc_keys}
                    if N_ens <= N_ens_thresh else
-                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0} for akey in self.asmc_keys})
+                   {akey:{'median':0.0,'5pc':0.0,'16pc':0.0,'84pc':0.0,'95pc':0.0,'all':None} for akey in self.asmc_keys})
         confusions = np.zeros((len(neo.keys),Y.shape[0],Y.shape[0]),dtype=float)
         values = np.zeros((len(self.asmc_keys)-1,len(neo.keys)),dtype=float)
         for n in range(len(neo.keys)):
@@ -246,6 +250,11 @@ class MLUtilities(object):
                 values[a,n] = asmc_this[akey]
             del net_this
 
+        asmc_ens['confusion']['all'] = confusions
+        for a in range(len(self.asmc_keys)-1):
+            akey = self.asmc_keys[a+1]
+            asmc_ens[akey]['all'] = values[a]
+            
         if N_ens <= N_ens_thresh:
             asmc_mean = self.assess_multi_classification(neo.predict(X),Y)
             asmc_ens['confusion']['mean'] = asmc_mean['confusion'] #np.mean(confusions,axis=0)
