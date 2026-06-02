@@ -3,6 +3,7 @@ from scipy import linalg
 from utilities import Utilities
 
 import multiprocessing as mp
+import copy
 from time import sleep
 import gc
 
@@ -107,8 +108,8 @@ class MLUtilities(object):
         n_TN = np.where((Ypred_i == -neg_labels) & (Y_i == -neg_labels))[0].size
         n_FP = np.where((Ypred_i == 1) & (Y_i == -neg_labels))[0].size
         n_FN = np.where((Ypred_i == -neg_labels) & (Y_i == 1))[0].size
-        del Ypred_i,Y_i
-        gc.collect()
+        Ypred_i = None
+        Y_i = None
 
         accuracy = (n_TP + n_TN)/(n_TP + n_TN + n_FP + n_FN)
         precision = n_TP/(n_TP + n_FP + 1e-15)
@@ -124,7 +125,7 @@ class MLUtilities(object):
         
         return out
     ###################
-
+    
     ###################
     def assess_classification_ensemble(self,neo,X,Y,N_ens_thresh=1000000):
         """ Assess binary classification output for network ensemble. 
@@ -181,11 +182,11 @@ class MLUtilities(object):
 
     ###################
     def assess_multi_classification(self,Ypred,Y):
-        """ Assess binary classification output for predicted labels Ypred and true labels Y.
+        """ Assess multi-class classification output for predicted labels Ypred and true labels Y.
             Expect Ypred.shape = Y.shape = (K,n) for K categories and n data points, domain {0,1} (one-hot encoding).
             Returns dict with assessment summary having keys:
             confusion,accuracy,precision,recall,F1score
-            where confusion = confusion matrix and remaining quantities are equi-weighted macro-averages.
+            where confusion = confusion matrix, remaining quantities are equi-weighted macro-averages.
         """
         Ypred_i = np.rint(Ypred)
         Y_i = np.rint(Y)
@@ -198,8 +199,8 @@ class MLUtilities(object):
                 count = np.where((Y_i[k_true] == 1.0) & (Ypred_i[k_pred] == 1.0))[0].size
                 confusion[k_true,k_pred] = count
         
-        del Ypred_i,Y_i
-        gc.collect()
+        Ypred_i = None
+        Y_i = None
 
         if np.sum(confusion) != Y.shape[1]:
             raise Exception("Invalid sum over confusion matrix elements.")
@@ -232,7 +233,7 @@ class MLUtilities(object):
             features X and true labels Y (where X.shape = (nfeat,nsamp) and Y.shape = (K,nsamp)).
             Returns dict with keys
             confusion,accuracy,precision,recall,F1score
-            containing ensemble (mean,std) or (median,16pc,84pc).
+            containing ensemble (mean,std) or (median,5pc,16pc,84pc,95pc) and 'all' with per-network values.
         """
         N_ens = len(neo.keys)
         asmc_ens = ({akey:{'mean':0.0,'std':0.0,'all':None} for akey in self.asmc_keys}
@@ -291,6 +292,106 @@ class MLUtilities(object):
         return asmc_ens
     ###################
 
+    ###################
+    def calc_OC_single(self,obj,X,Y,thresholds=None):
+        """ Calculate operating characteristic (OC) for binary/multi-class classification using single network or network ensemble average.
+            -- obj: single-network or NetworkEnsembleObject classifier instance
+            -- X,Y: (test) data on which to evaluate OC. 
+                    Expect X.shape = (n0,nsamp), Y.shape = (K,nsamp).         
+                    If K == 1, this is binary classification and neg_labels should be set.
+                    If K > 1, this is multi-class classification and neg_labels will be ignored. In this case, K curves will be generated, one for each class.
+            -- thresholds: None (default) or 1-d array of increasing threshold values between 0 and 1. None defaults to np.linspace(0.0,1.0,200).
+            Returns:
+            -- OC_dict: dictionary with 
+                        keys: self.asc_keys + ['FPR','thresholds'] 
+                        values: 
+                        -- arrays of shape (K,thresholds.size) [per-class curves for each key] for each of self.asc_keys + ['FPR']
+                        -- threshold array of shape (thresholds.size,) for key 'thresholds'
+        """
+        dummy = {key:[] for key in self.asc_keys + ['FPR']}
+        OC_dict = copy.deepcopy(dummy)
+        thresholds = thresholds if thresholds is not None else np.linspace(0.0,1.0,200)
+        OC_dict['thresholds'] = thresholds
+        
+        K,nsamp = Y.shape
+        neg_labels = bool(np.any(Y < 0.0))
+        if hasattr(obj,'ensemble'):
+            ypred = obj.predict(X,return_prob=True)
+        else:
+            net_use = copy.deepcopy(obj)
+            net_use.net_type = 'reg'
+            net_use.modules[-1].net_type = 'reg'
+            # force last module to return non-negative probabilities rather than labels
+            net_use.forward((X - net_use.X_mean)/(net_use.X_std + 1e-15)) # account for standardization, if requested
+            # extract and record probabilities
+            ypred = net_use.modules[-1].predict() # shape (K,nsamp)
+            net_use = None
+        
+        Ypred = np.zeros((thresholds.size,K,nsamp)) # setup for one-vs-rest binary classification
+        for t in range(thresholds.size):
+            for k in range(K):
+                Ypred[t,k] = np.rint(self.step_fun(ypred[k] - thresholds[t])).astype(int)
+            # ut.status_bar(t,thresholds.size)
+                
+        if (K == 1) & neg_labels:
+            # convert 0 to -1 if needed.
+            Ypred[Ypred < 1e-4] = -1.0
+                
+        for k in range(K):
+            OC_dict_k = copy.deepcopy(dummy)
+            for t in range(thresholds.size):
+                asc = self.assess_classification(Ypred[t,k],Y[k],neg_labels=neg_labels)
+                for akey in self.asc_keys:
+                    OC_dict_k[akey].append(asc[akey])
+                OC_dict_k['FPR'].append(asc['FP']/(asc['FP'] + asc['TN'] + 1e-30))
+                    
+            for akey in OC_dict_k.keys():
+                OC_dict[akey].append(OC_dict_k[akey])
+            OC_dict_k = None
+            # ut.status_bar(k,K)
+    
+
+        del Ypred,ypred
+        gc.collect()
+
+        for key in OC_dict.keys():
+            OC_dict[key] = np.array(OC_dict[key])
+                
+        return OC_dict
+    ###################
+
+    ###################
+    def calc_OC_ensemble(self,neo,X,Y,thresholds=None):
+        """ Wrapper to calculate operating characteristics (OC) for binary/multi-class classification using network ensemble.
+            -- neo: NetworkEnsembleObject classifier instance
+            -- X,Y: (test) data on which to evaluate OC. 
+                    Expect X.shape = (n0,nsamp), Y.shape = (K,nsamp).         
+                    If K == 1, this is binary classification and neg_labels should be set.
+                    If K > 1, this is multi-class classification and neg_labels will be ignored. In this case, K curves will be generated, one for each class.
+            -- thresholds: None (default) or 1-d array of increasing threshold values between 0 and 1. None defaults to np.linspace(0.0,1.0,50).
+            Returns:
+            -- OC_dict: dictionary of dictionaries, keyed by neo.keys + ['ens_avg'], 
+                        each being output of self.calc_OC_single(), with 
+                          keys: self.asc_keys + ['thresholds'] 
+                          values: 
+                          -- arrays of shape (K,thresholds.size) [per-class curves for each key] for each of self.asc_keys
+                          -- threshold array of shape (thresholds.size,) for key 'thresholds'
+                        key 'ens_avg' contains weighted averages over ensemble members
+        """
+        ut = Utilities()
+        OC_ens = {key:{} for key in neo.keys}
+        for n in range(len(neo.keys)):
+            key = neo.keys[n]
+            net = neo.ensemble[key]['net']
+            OC_dict = self.calc_OC_single(net,X,Y,thresholds=thresholds)
+            OC_ens[key] = OC_dict
+            ut.status_bar(n,len(neo.keys))
+
+        OC_ens['ens_avg'] = self.calc_OC_single(neo,X,Y,thresholds=thresholds)
+            
+        return OC_ens
+    ###################
+    
     ###################
     def prime_factors(self,n):
         """Returns all the prime factors of a positive integer. 
