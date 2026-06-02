@@ -1621,7 +1621,12 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
     #########################################
 
     #########################################
-    def predict(self,X):
+    def predict(self,X,return_prob=False):
+        """ Prediction method for ensemble.
+            -- X: array of shape (self.n0,nsamp)
+            -- return_prob: bool (default False). Only used if self.net_type=='class'.
+                            If True, return weighted average class-wise probability, else return discrete labels.
+        """
         if len(self.keys) == 0:
             raise Exception("prediction can only happen after ensemble is loaded.")
 
@@ -1657,7 +1662,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
                     # convert 0 to -1 if needed.
                     Ypred[Ypred < 1e-4] = -1.0
             else:
-                Ypred = self.one_hot(self.rv(np.argmax(A,axis=0)+1),A.shape[0])
+                Ypred = A if return_prob else self.one_hot(self.rv(np.argmax(A,axis=0)+1),A.shape[0])
             
             
         return Ypred
