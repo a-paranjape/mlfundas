@@ -2320,7 +2320,8 @@ class BiSequential(Module,MLUtilities,Utilities):
         params_setup['L'] = params_setup['La']
         params_setup['n_layer'] = params_setup['n_layer_a']
         params_setup['atypes'] = params_setup['atypes_a']
-        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key. 
+        params_setup['standardize_Y'] = False # for safety. actually only Sequential.train and Sequential.load will give non-trivial effect of this key.
+        params_setup['verbose'] = self.verbose
         basis = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules_a[m])
