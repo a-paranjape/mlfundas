@@ -8,9 +8,12 @@ Modules implementing basic machine learning algorithms for classification and re
 * `mlalgos`: algorithms
     * `Perceptron` -- classic linear classification.
     * `Sequential` -- fully-connected feed-forward NN (subsets of this are logistic regression, support vector machine, ridge regression).
-    * `BuildNN` -- wrapper to systematically search over various classes of NN architecture.
     * `BiSequential` -- architecture to approximate functions $f(x,\theta)$ using a separable basis of the form $f(x,\theta) \approx \sum_{i=1}^{n} b_i(x) w_i(\theta)$ 
-    * `GAN` -- generative adversarial network architecture using two Sequential networks, based on [Goodfellow+ (2014)](https://arxiv.org/abs/1406.2661) 
+    * `GAN` -- generative adversarial network architecture using two `Sequential` networks, based on [Goodfellow+ (2014)](https://arxiv.org/abs/1406.2661)
+    * `NetworkEnsembleObject` -- class to load collection of NN instances as an ensemble of trained networks.
+    * `HyperOpt` -- class to enable randomized search over various NN architecture choices and hyperparameters powered by Latin hypercube sampling. Can be used to identify either a single best instance or an ensemble of instances.
+    * `IllustrateNetwork` -- utility class to illustrate architecture of an existing network or network ensemble.
+    * `BuildNN` -- **(deprecated)** class to systematically search over various classes of NN architecture. Superseded by `HyperOpt`.
 * `mlstats`: general purpose statistics modules for use in parameter inference, likelihood emulation, etc. Needs [Cobaya](https://cobaya.readthedocs.io/en/latest/) installed (see instructions [here](https://cobaya.readthedocs.io/en/latest/installation.html))
 * `mlseq`: sequential algorithms (state machines, recurrent NN, Markov decision process, ...). **UNDER CONSTRUCTION**
 * `utilities`: provides various utility modules for i/o and simple tools.
