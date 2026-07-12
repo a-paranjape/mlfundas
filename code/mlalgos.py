@@ -1106,7 +1106,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         if self.curriculum is not None:
             for c in self.curriculum:
-                if (not isinstance(c,int)) & (not isinstance(s,slice)):
+                if not (isinstance(c,int) | isinstance(c,np.int32) | isinstance(c,np.int64) | isinstance(c,slice)):
                     raise Exception("Elements of curriculum must all be of type int or slice.")
             self.c_is_int = isinstance(self.curriculum[0],int)
             if self.c_is_int:
@@ -1783,7 +1783,7 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.net.train(X,Y,params_train=params_train)
         else:
             for c in curriculum:
-                if (not isinstance(c,int)) & (not isinstance(s,slice)):
+                if not (isinstance(c,int) | isinstance(c,np.int32) | isinstance(c,np.int64) | isinstance(c,slice)):
                     raise Exception("Elements of curriculum must all be of type int or slice.")
             c_is_int = isinstance(curriculum[0],int)
 
