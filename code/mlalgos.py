@@ -875,6 +875,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             :: optional
             ------------
             -- family: str [default 'seq']; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
+            -- curriculum: None or list of ints or list of slices. If not None, CurriculumNetwork with specified family and curriculum will be trained.
+            -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision. Only used if curriculum is not None.
             ------
             :: :: training sample
             ------
@@ -980,6 +982,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.theta_dim = setup_dict.get('theta_dim',None)
 
         self.family = setup_dict.get('family','seq')
+        self.curriculum = setup_dict.get('curriculum',None)
+        self.revision_frac = setup_dict.get('revision_frac',0.1)
         
         self.train_frac = setup_dict.get('train_frac',0.8)
         self.val_frac = setup_dict.get('val_frac',0.2)
@@ -1099,6 +1103,15 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 raise TypeError("HyperOpt for BiSequential needs theta_dim to be specified.")
             if self.Y.shape[0] != 1:
                 raise Exception("HyperOpt for BiSequential needs target dimension = 1.")
+
+        if self.curriculum is not None:
+            for c in self.curriculum:
+                if (not isinstance(c,int)) & (not isinstance(s,slice)):
+                    raise Exception("Elements of curriculum must all be of type int or slice.")
+            self.c_is_int = isinstance(self.curriculum[0],int)
+            if self.c_is_int:
+                if np.max(self.curriculum) >= self.X.shape[1]:
+                    raise Exception('Incompatible curriculum detected.')
 
         # train_frac should be between 0 and 1, exclusive
         if (self.train_frac <= 0.0) | (self.train_frac >= 1.0):
@@ -1333,7 +1346,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'decay_norm':self.decay_norm,
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}            
-        ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,'dream_schedule':{}}
+        ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,
+                'dream_schedule':{},'curriculum':self.curriculum,'revision_frac':self.revision_frac}
         if self.family_name == 'BiSequential':
             pset['theta_dim'] = self.theta_dim
 
@@ -1716,10 +1730,120 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             return ens_avg_Nwts
         else:
             return
+    #########################################    
+#################################
+
+
+#################################
+# Class for implementing curriculum learning with various network families
+#################
+class CurriculumNetwork(Module,MLUtilities,Utilities):
+    #########################################
+    def __init__(self,params={}):
+        """ Class to implement curriculum learning for specified network family. 
+            params should be dictionary with a subset of following keys:
+            -- family: str [default 'seq']; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
+            ** Remaining keys should be appropriate for the chosen family. See the respective doc string. **
+            Note: params['X'] and params['Y'] should contain training data sorted according to the specified curriculum.
+            Use CurriculumNetwork.train to implement curriculum learning.
+        """
+        Utilities.__init__(self)
+        
+        self.family_dict = {'seq':{'name':'Sequential','module':Sequential},
+                            'biseq':{'name':'BiSequential','module':BiSequential},
+                            'gan':{'name':'GAN','module':GAN}}
+        
+        self.family = params.get('family','seq')
+        self.params = params
+
+        self.verbose = params.get('verbose',True)
+        self.logfile = params.get('logfile',None)
+
+        if self.verbose:
+            self.print_this('Curriculum learning with family: '+self.family,self.logfile)
+            self.print_this('... initializing network',self.logfile)
+        
+        self.net = self.family_dict[self.family]['module'](params=params)
+    #########################################
+
+    #########################################
+    def train(self,X,Y,params_train={}):
+        """ Training with curriculum learning. 
+            -- X,Y,params_train : as appropriate for training chosen family
+            params_train supports the following two additional keys
+            -- curriculum: None (default) or list of ints (break points) or list of slices defining curriculum
+            -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision at end of training.
+        """
+        curriculum = params_train.get('curriculum',None)
+        revision_frac = params_train.get('revision_frac',0.1)
+        
+        if curriculum is None:
+            if self.verbose:
+                self.print_this('... no curriculum specified, implementing standard training',self.logfile)
+            self.net.train(X,Y,params_train=params_train)
+        else:
+            for c in curriculum:
+                if (not isinstance(c,int)) & (not isinstance(s,slice)):
+                    raise Exception("Elements of curriculum must all be of type int or slice.")
+            c_is_int = isinstance(curriculum[0],int)
+
+            max_epoch = params_train.get('max_epoch',100)
+            check_after = params_train.get('check_after',30)
+
+            n_lessons = len(curriculum)
+            revision_epochs = int(revision_frac*max_epoch)
+            max_epoch -= revision_epochs
+            schedule = {'max_epoch':[max_epoch//n_lessons]*(n_lessons-1) + [(max_epoch//n_lessons)+(max_epoch%n_lessons)] + [revision_epochs],
+                        'check_after':[check_after//n_lessons]*n_lessons + [int(revision_frac*check_after)]}
+
+            if self.verbose:
+                self.print_this('... starting curriculum learning',self.logfile)
+                
+            # copy of training parameters, to be updated for max_epoch and check_after
+            ptrn = copy.deepcopy(params_train)
+
+            # copy of self.params, to be used with resume=True for lesson n > 0
+            pset = copy.deepcopy(self.params)
+            pset['resume'] = True
+            if c_is_int:
+                prev_lesson = 0
+            for n in range(n_lessons):
+                #####################
+                lesson = curriculum[n]
+                sl = np.s_[prev_lesson:lesson] if c_is_int else lesson
+                X_train = X[:,sl]
+                Y_train = Y[:,sl]
+                ptrn['max_epoch'] = schedule['max_epoch'][n]
+                ptrn['check_after'] = schedule['check_after'][n]
+                if n > 0:
+                    self.net = self.family_dict[self.family]['module'](params=pset)
+                    self.net.load()
+                self.net.train(X_train,Y_train,params_train=ptrn)
+                if c_is_int:
+                    prev_lesson = 1*lesson
+                if self.verbose:
+                    self.print_this('... ... lesson {0:d} of {1:d} complete'.format(n+1,n_lessons),self.logfile)
+                #####################
+            self.net = self.family_dict[self.family]['module'](params=pset)
+            self.net.load()
+            ptrn['max_epoch'] = schedule['max_epoch'][-1]
+            ptrn['check_after'] = schedule['check_after'][-1]
+            self.net.train(X,Y,params_train=ptrn)
+            if self.verbose:
+                self.print_this('... ... revision lesson complete',self.logfile)
+        if self.verbose:
+            self.print_this('... all done',self.logfile)
+                
+        return
+    #########################################
+    
+    #########################################
+    def predict(self,X):
+        """ Predict targets for given data set. """
+        return self.net.predict(X)
     #########################################
 
 
-    
 #################################
 
 
