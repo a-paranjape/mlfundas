@@ -150,8 +150,8 @@ class MLUtilities(object):
             del net_this
 
         for a in range(len(self.asc_keys)):
-            akey = self.asmc_keys[a]
-            asmc_ens[akey]['all'] = values[a]
+            akey = self.asc_keys[a]
+            asc_ens[akey]['all'] = values[a]
             
         if N_ens <= N_ens_thresh:
             asc_mean = self.assess_classification(neo.predict(X),Y,neg_labels=neo.neg_labels)
