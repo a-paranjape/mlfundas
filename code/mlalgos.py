@@ -1819,7 +1819,7 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
     def train(self,X,Y,params={}):
         """ Training with curriculum learning. 
             -- X,Y,params : as appropriate for training chosen family
-            params_train supports the following two additional keys
+            params supports the following two additional keys
             -- curriculum: None (default) or list of ints (break points) or list of slices defining curriculum
             -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision at end of training.
         """
