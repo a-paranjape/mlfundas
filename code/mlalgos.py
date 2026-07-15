@@ -1034,12 +1034,18 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         self.family_name = self.family_dict[self.family]['name']
         self.family_module = self.family_dict[self.family]['module']
+        if self.curriculum is not None:
+            self.family_module = CurriculumNetwork
 
         if self.verbose:
             self.print_this("--------------",self.logfile)
             self.print_this("Hyperparameter + architecture optimization",self.logfile)
             self.print_this("--------------",self.logfile)
             self.print_this("... neural network family: "+self.family_name,self.logfile)
+            if self.curriculum is not None:
+                self.print_this("... ... curriculum network will be trained",self.logfile)
+            else:
+                self.print_this("... ... standard training will be implemented",self.logfile)
 
         if self.family_name in ['GAN','BiSequential']:
             raise NotImplementedError("Sorry! HyperOpt is currently only available for Sequential family, not for "+self.family_name)
@@ -1108,7 +1114,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             for c in self.curriculum:
                 if not (isinstance(c,int) | isinstance(c,np.int32) | isinstance(c,np.int64) | isinstance(c,slice)):
                     raise Exception("Elements of curriculum must all be of type int or slice.")
-            self.c_is_int = isinstance(self.curriculum[0],int)
+            self.c_is_int = isinstance(self.curriculum[0],int) | isinstance(self.curriculum[0],np.int32) | isinstance(self.curriculum[0],np.int64)
             if self.c_is_int:
                 if np.max(self.curriculum) >= self.X.shape[1]:
                     raise Exception('Incompatible curriculum detected.')
@@ -1242,7 +1248,39 @@ class HyperOpt(Module,MLUtilities,Utilities):
     #############################
     def gen_train(self):
         """ Convenience function to be able to repeatedly split input data into training and test samples. """
-        ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
+        
+        if self.curriculum is None:
+            ind_train = self.rng.choice(self.n_samp,size=self.n_train,replace=False)
+        else:
+            ind_all = np.arange(self.n_samp) # all available indices
+            ind_train = np.zeros(self.n_train,dtype=int) # storage for training sample indices
+            n_lessons = len(self.curriculum)
+            self.curriculum_train = np.zeros(n_lessons,dtype=int) # storage for curriculum on training set
+            n_train_per_lesson = self.n_train // n_lessons
+            
+            # initialize iterations
+            i_train_prev = 0
+            if self.c_is_int:
+                prev_lesson = 0
+            for n in range(n_lessons):
+                #####################
+                lesson = self.curriculum[n]
+                sl = np.s_[prev_lesson:lesson] if self.c_is_int else lesson
+                ind_lesson = ind_all[sl] # subset of all indices in this lesson
+                n_train_this = 1*n_train_per_lesson # how many training samples to generate
+                i_train_this = n_train_per_lesson*(n+1)
+                if n == (n_lessons-1):
+                    # last step should reach the end
+                    n_train_this += (self.n_train % n_lessons) 
+                    i_train_this = self.n_train
+                # generate training indices for this lesson
+                ind_train[i_train_prev:i_train_this] = self.rng.choice(ind_lesson,size=n_train_this,replace=False)
+                self.curriculum_train[n] = i_train_this # set break point
+                # update for next iteration
+                i_train_prev = 1*i_train_this
+                if self.c_is_int:
+                    prev_lesson = 1*lesson
+
         ind_test = np.delete(np.arange(self.n_samp),ind_train) # Note ind_test is ordered although ind_train is randomised
 
         X_train = self.X[:,ind_train].copy()
@@ -1294,7 +1332,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             
         if not np.isfinite(ts):
             ts = 1e30
-            
+
         # save this network (weights, setup dict and loss history) to file
         net.save()
         if self.family_name in ['GAN']:
@@ -1347,7 +1385,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}            
         ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,
-                'dream_schedule':{},'curriculum':self.curriculum,'revision_frac':self.revision_frac}
+                'dream_schedule':{}}
         if self.family_name == 'BiSequential':
             pset['theta_dim'] = self.theta_dim
 
@@ -1389,6 +1427,13 @@ class HyperOpt(Module,MLUtilities,Utilities):
                                 'slowdown': params[c,-1]}
         
         cnt_max = self.n_iter*self.max_config
+
+        # sample training+test data
+        X_train,Y_train,X_test,Y_test = self.gen_train()
+        
+        if self.curriculum is not None:
+            ptrn['curriculum'] = self.curriculum_train # this will be available from self.gen_train call
+            ptrn['revision_frac'] = self.revision_frac
         
         if self.verbose:
             self.print_this("... setting tasks",self.logfile)
@@ -1425,8 +1470,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
             pset['atypes'] += [last_atype] 
             
             for it in range(self.n_iter):
-                X_train,Y_train,X_test,Y_test = self.gen_train() # sample training+test data
                 tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
+
+        del X_train,Y_train,X_test,Y_test
+        gc.collect()
 
         # train networks
         if len(tasks) != cnt_max:
@@ -1764,31 +1811,37 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.print_this('... initializing network',self.logfile)
         
         self.net = self.family_dict[self.family]['module'](params=params)
+        self.net_type = self.net.net_type
+        self.file_stem = self.net.file_stem
     #########################################
 
     #########################################
-    def train(self,X,Y,params_train={}):
+    def train(self,X,Y,params={}):
         """ Training with curriculum learning. 
-            -- X,Y,params_train : as appropriate for training chosen family
+            -- X,Y,params : as appropriate for training chosen family
             params_train supports the following two additional keys
             -- curriculum: None (default) or list of ints (break points) or list of slices defining curriculum
             -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision at end of training.
         """
-        curriculum = params_train.get('curriculum',None)
-        revision_frac = params_train.get('revision_frac',0.1)
+        curriculum = params.get('curriculum',None)
+        revision_frac = params.get('revision_frac',0.1)
         
         if curriculum is None:
             if self.verbose:
                 self.print_this('... no curriculum specified, implementing standard training',self.logfile)
-            self.net.train(X,Y,params_train=params_train)
+            self.net.train(X,Y,params=params)
+            
+            self.training_loss = self.net.training_loss.copy()
+            self.val_loss = self.net.val_loss.copy()
+            self.epochs = self.net.epochs.copy()
         else:
             for c in curriculum:
                 if not (isinstance(c,int) | isinstance(c,np.int32) | isinstance(c,np.int64) | isinstance(c,slice)):
                     raise Exception("Elements of curriculum must all be of type int or slice.")
-            c_is_int = isinstance(curriculum[0],int)
+            c_is_int = isinstance(curriculum[0],int) | isinstance(curriculum[0],np.int32) | isinstance(curriculum[0],np.int64)
 
-            max_epoch = params_train.get('max_epoch',100)
-            check_after = params_train.get('check_after',30)
+            max_epoch = params.get('max_epoch',100)
+            check_after = params.get('check_after',30)
 
             n_lessons = len(curriculum)
             revision_epochs = int(revision_frac*max_epoch)
@@ -1798,9 +1851,13 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
 
             if self.verbose:
                 self.print_this('... starting curriculum learning',self.logfile)
+
+            self.training_loss = np.array([])
+            self.val_loss = np.array([])
+            self.epochs = np.array([])
                 
             # copy of training parameters, to be updated for max_epoch and check_after
-            ptrn = copy.deepcopy(params_train)
+            ptrn = copy.deepcopy(params)
 
             # copy of self.params, to be used with resume=True for lesson n > 0
             pset = copy.deepcopy(self.params)
@@ -1817,20 +1874,37 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
                 ptrn['check_after'] = schedule['check_after'][n]
                 if n > 0:
                     self.net = self.family_dict[self.family]['module'](params=pset)
-                    self.net.load()
-                self.net.train(X_train,Y_train,params_train=ptrn)
+                    self.net.load_loss_history()
+                self.net.train(X_train,Y_train,params=ptrn)
+                self.training_loss = np.concatenate((self.training_loss,self.net.training_loss))
+                self.val_loss = np.concatenate((self.val_loss,self.net.val_loss))
                 if c_is_int:
                     prev_lesson = 1*lesson
                 if self.verbose:
                     self.print_this('... ... lesson {0:d} of {1:d} complete'.format(n+1,n_lessons),self.logfile)
                 #####################
             self.net = self.family_dict[self.family]['module'](params=pset)
-            self.net.load()
             ptrn['max_epoch'] = schedule['max_epoch'][-1]
             ptrn['check_after'] = schedule['check_after'][-1]
-            self.net.train(X,Y,params_train=ptrn)
+            self.net.train(X,Y,params=ptrn)
+            
+            self.training_loss = np.concatenate((self.training_loss,self.net.training_loss))
+            self.val_loss = np.concatenate((self.val_loss,self.net.val_loss))
+            self.epochs = np.arange(self.val_loss.size)+1.0
+
+            # save complete loss history
+            self.net.training_loss = self.training_loss.copy()
+            self.net.val_loss = self.val_loss.copy()
+            self.net.epochs = self.epochs.copy()
+            self.net.save_loss_history()
+            
             if self.verbose:
                 self.print_this('... ... revision lesson complete',self.logfile)
+
+        # these help with HyperOpt interface
+        self.modules = copy.deepcopy(self.net.modules) 
+        self.modules[-1].net_type = self.net_type
+        
         if self.verbose:
             self.print_this('... all done',self.logfile)
                 
@@ -1843,6 +1917,22 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
         return self.net.predict(X)
     #########################################
 
+    #########################################
+    def save(self):
+        """ Save current weights and setup params to file(s). """
+        # these help with HyperOpt interface
+        self.net.file_stem = self.file_stem
+        self.net.params['file_stem'] = self.file_stem
+        self.net.modules = copy.deepcopy(self.modules)
+        return self.net.save()
+    #########################################
+
+    #########################################
+    def save_loss_history(self):
+        """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
+        return self.net.save_loss_history()
+    #########################################
+    
 
 #################################
 
