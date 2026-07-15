@@ -1116,7 +1116,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                     raise Exception("Elements of curriculum must all be of type int or slice.")
             self.c_is_int = isinstance(self.curriculum[0],int) | isinstance(self.curriculum[0],np.int32) | isinstance(self.curriculum[0],np.int64)
             if self.c_is_int:
-                if np.max(self.curriculum) >= self.X.shape[1]:
+                if np.max(self.curriculum) > self.X.shape[1]:
                     raise Exception('Incompatible curriculum detected.')
 
         # train_frac should be between 0 and 1, exclusive
