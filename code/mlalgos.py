@@ -562,7 +562,7 @@ class Sequential(Module,MLUtilities,Utilities):
                     ind_corrupt = None
                     ind_corrupt_shuff = None
                     
-                    lrate = lrate_default/(slowdown + 1e-15) # lrate is slowed down in waking state
+                    lrate = lrate_default/(slowdown + 1e-15) # lrate is slowed down in dreaming state
                 else:
                     lrate = 1.0*lrate_default # lrate is default in waking state
             else:
@@ -875,8 +875,6 @@ class HyperOpt(Module,MLUtilities,Utilities):
             :: optional
             ------------
             -- family: str [default 'seq']; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
-            -- curriculum: None or list of ints or list of slices. If not None, CurriculumNetwork with specified family and curriculum will be trained.
-            -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision. Only used if curriculum is not None.
             ------
             :: :: training sample
             ------
@@ -889,6 +887,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ------
             :: :: training setup
             ------
+            -- curriculum: None (default) or list of ints or list of slices. If not None, CurriculumNetwork with specified family and curriculum will be trained.
+
             -- standardize_X: bool (default True); whether or not to standardize features.
             -- standardize_Y: bool (default True); whether or not to standardize labels.
             -- max_epoch: int (default 1000000); maximum number of training epochs
@@ -949,6 +949,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
                         If not None, expect dict with structure 
                         {'min': float (e.g., 0.4), 'max': float (e.g., 0.6)}
                         None will default to 0.5.
+            -- slowdowns: range for slow-down of learning rate in curriculum learning 
+                          dict with structure 
+                          {'min': float (default 1.0), 'max': float (default 1.0)} [default is no slow-down]
+                          Only relevant when curriculum is not None.
             -- dream_schedules: None (default) or dict of dicts (defining sampled ranges) 
                                 containing following keys defining periodic 'dream' state during training
                                 (excluding a key sets it to default).
@@ -983,7 +987,6 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         self.family = setup_dict.get('family','seq')
         self.curriculum = setup_dict.get('curriculum',None)
-        self.revision_frac = setup_dict.get('revision_frac',0.1)
         
         self.train_frac = setup_dict.get('train_frac',0.8)
         self.val_frac = setup_dict.get('val_frac',0.2)
@@ -1019,9 +1022,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.lrelu_slopes = setup_dict.get('lrelu_slopes',None)
         self.reg_funs = setup_dict.get('reg_funs',None)
         self.p_drops = setup_dict.get('p_drops',None)
+        self.slowdowns = setup_dict.get('slowdowns',{'min':1.0,'max':1.0})
         self.dream_schedules = setup_dict.get('dream_schedules',None)
-        # dream_schedules = setup_dict.get('dream_schedules',None)
-        # self.dream_schedules = [None] if ((dream_schedules is None) | (self.family != 'seq')) else dream_schedules 
         
         file_stem = setup_dict.get('file_stem','net')        
         self.file_stem = file_stem+'/net'
@@ -1160,6 +1162,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.check_dict(self.widths,'widths',int,1,np.inf)
         self.check_dict(self.lglrates,'lglrates',float,-np.inf,np.inf)
         self.check_dict(self.wt_decays,'wt_decays',float,0.0,np.inf)
+        self.check_dict(self.slowdowns,'slowdowns',float,1.0,np.inf)
         
         if self.thresholds is not None:
             self.check_dict(self.thresholds,'thresholds',float,0.0,1.0)
@@ -1379,17 +1382,17 @@ class HyperOpt(Module,MLUtilities,Utilities):
             raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         ##############################
         
-        mb_count = int(np.sqrt(self.n_train)) 
+        mb_count = int(np.sqrt(self.n_train))
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'decay_norm':self.decay_norm,
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}            
         ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,
                 'dream_schedule':{}}
-        if self.family_name == 'BiSequential':
+        if self.family == 'biseq':
             pset['theta_dim'] = self.theta_dim
 
-        # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops,dream_schedules] --> N_lhc in number
+        # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops,slowdowns,dream_schedules] --> N_lhc in number
         # ** pay attention to behaviour of fixed_width:
         # -- if True, then LHC will behave as usual, with one width per config
         # -- if None, then sampled width will be interpreted as basis size and config will have telescoping widths determined by length and data dims
@@ -1402,9 +1405,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
         # -- feed max_config tasks to the queue_train.
 
         param_mins = [self.layers['min'],self.widths['min'],
-                      self.lglrates['min'],self.wt_decays['min'],self.lrelu_slopes['min'],self.thresholds['min'],self.p_drops['min']]
+                      self.lglrates['min'],self.wt_decays['min'],self.lrelu_slopes['min'],self.thresholds['min'],self.p_drops['min'],self.slowdowns['min']]
         param_maxs = [self.layers['max']+1,self.widths['max']+1, # note +1: samples will be float, then rounded down using int()
-                      self.lglrates['max'],self.wt_decays['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max']]
+                      self.lglrates['max'],self.wt_decays['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max'],self.slowdowns['max']]
         if self.dream_schedules is not None:
             dream_defaults = {'dream_every':10,'corrupt_X':0.8,'corrupt_Y':0.1,'slowdown':1.0}
             for key in dream_defaults.keys():
@@ -1414,12 +1417,20 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         params = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
         params[:,2] = 10**params[:,2] # convert lglrate to lrate
-
         sample_htype = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
         sample_rf = self.rng.choice(self.reg_funs,size=self.max_config,replace=True).astype(str)
-        # sample_ds = self.rng.choice(self.dream_schedules,size=self.max_config,replace=True)
+
+        if self.family == 'biseq':
+            # in this case, interpret params,sample_htype as defining '**_a' parameters, and sample another set for '**_w' parameters
+            params_w = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
+            params_w[:,2] = 10**params_w[:,2] # convert lglrate to lrate
+            sample_htype_w = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
+        
+        
         sample_ds = [None]*self.max_config
         if self.dream_schedules is not None:
+            if self.family != 'seq':
+                raise NotImplementedError('Subconscious learning only available for Sequential networks so far.')
             for c in range(self.max_config):
                 sample_ds[c] = {'dream_every':int(params[c,-4]),
                                 'corrupt_X':params[c,-3],
@@ -1433,30 +1444,45 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         if self.curriculum is not None:
             ptrn['curriculum'] = self.curriculum_train # this will be available from self.gen_train call
-            ptrn['revision_frac'] = self.revision_frac
         
         if self.verbose:
             self.print_this("... setting tasks",self.logfile)
+
+        # for biseq
+        # self.La = int(params.get('La',1))
+        # self.n_layer_a = params.get('n_layer_a',[1]) # last n_layer_a should be number of non-trivial basis functions
+        # self.atypes_a = params.get('atypes_a',['lin']) 
+        # self.custom_atypes_a = params.get('custom_atypes_a',None)
+        # self.wt_decay_a = params.get('wt_decay_a',0.0)
+        # self.decay_norm_a = int(params.get('decay_norm_a',2))
+        # lrate_a = params.get('lrate_a',0.005)
+
+        # self.Lw = int(params.get('Lw',1))
+        # self.n_layer_w = params.get('n_layer_w',[1]) # last n_layer_w should be 1 + number of non-trivial basis functions
+        # self.atypes_w = params.get('atypes_w',['lin']) 
+        # self.custom_atypes_w = params.get('custom_atypes_w',None)
+        # self.wt_decay_w = params.get('wt_decay_w',0.0)
+        # self.decay_norm_w = int(params.get('decay_norm_w',2))        
+        # lrate_w = params.get('lrate_w',0.005)
             
         tasks = []
         for c in range(self.max_config):
             # order: [L,W,lrate,wt_decay,lrelu_slope,threshold,p_drop]
             L = int(params[c,0])
-            pset['L'] = L
-            
+            pset['L'] = L            
             W = int(params[c,1])
             if self.fixed_width is None:
                 pset['n_layer'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L))) for l in range(1,L)] 
             else:
                 pset['n_layer'] = [W]*(L-1) if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-2))
-            pset['n_layer'] += [self.target_dim]
-            
+            pset['n_layer'] += [self.target_dim]            
             ptrn['lrate'] = params[c,2]
             pset['wt_decay'] = params[c,3]
             
             pset['lrelu_slope'] = params[c,4]
             pset['threshold'] = params[c,5]
             pset['p_drop'] = params[c,6]
+            ptrn['slowdown'] = params[c,7]
 
             pset['reg_fun'] = sample_rf[c]
             ptrn['dream_schedule'] = sample_ds[c]
@@ -1821,10 +1847,10 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             -- X,Y,params : as appropriate for training chosen family
             params supports the following two additional keys
             -- curriculum: None (default) or list of ints (break points) or list of slices defining curriculum
-            -- revision_frac: float < 1 (default 0.1), fraction of epochs to devote to full-data revision at end of training.
+            -- slowdown: float >= 1.0, factor by which to progressively slow down learning rate as curriculum proceeds (default 1.0).
+                         Only used when curriculum is not None.
         """
         curriculum = params.get('curriculum',None)
-        revision_frac = params.get('revision_frac',0.1)
         
         if curriculum is None:
             if self.verbose:
@@ -1842,12 +1868,12 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
 
             max_epoch = params.get('max_epoch',100)
             check_after = params.get('check_after',30)
+            lrate_default = params.get('lrate',0.005)
+            slowdown = params.get('slowdown',1.0)
 
             n_lessons = len(curriculum)
-            revision_epochs = int(revision_frac*max_epoch)
-            max_epoch -= revision_epochs
-            schedule = {'max_epoch':[max_epoch//n_lessons]*(n_lessons-1) + [(max_epoch//n_lessons)+(max_epoch%n_lessons)] + [revision_epochs],
-                        'check_after':[check_after//n_lessons]*n_lessons + [int(revision_frac*check_after)]}
+            schedule = {'max_epoch':[max_epoch//n_lessons]*(n_lessons-1) + [(max_epoch//n_lessons)+(max_epoch%n_lessons)],
+                        'check_after':[check_after//n_lessons]*n_lessons}
 
             if self.verbose:
                 self.print_this('... starting curriculum learning',self.logfile)
@@ -1856,40 +1882,34 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.val_loss = np.array([])
             self.epochs = np.array([])
                 
-            # copy of training parameters, to be updated for max_epoch and check_after
+            # copy of training parameters, to be updated for lrate, max_epoch and check_after
             ptrn = copy.deepcopy(params)
+            ptrn['lrate'] = lrate_default # ensure that this key exists and is initialized
 
             # copy of self.params, to be used with resume=True for lesson n > 0
             pset = copy.deepcopy(self.params)
             pset['resume'] = True
-            if c_is_int:
-                prev_lesson = 0
             for n in range(n_lessons):
                 #####################
                 lesson = curriculum[n]
-                sl = np.s_[prev_lesson:lesson] if c_is_int else lesson
+                sl = np.s_[:lesson] if c_is_int else lesson
                 X_train = X[:,sl]
                 Y_train = Y[:,sl]
+                # update training parameters
                 ptrn['max_epoch'] = schedule['max_epoch'][n]
                 ptrn['check_after'] = schedule['check_after'][n]
+                ptrn['lrate'] = ptrn['lrate']/(slowdown + 1e-15)
+                #
                 if n > 0:
                     self.net = self.family_dict[self.family]['module'](params=pset)
                     self.net.load_loss_history()
                 self.net.train(X_train,Y_train,params=ptrn)
                 self.training_loss = np.concatenate((self.training_loss,self.net.training_loss))
                 self.val_loss = np.concatenate((self.val_loss,self.net.val_loss))
-                if c_is_int:
-                    prev_lesson = 1*lesson
                 if self.verbose:
                     self.print_this('... ... lesson {0:d} of {1:d} complete'.format(n+1,n_lessons),self.logfile)
                 #####################
-            self.net = self.family_dict[self.family]['module'](params=pset)
-            ptrn['max_epoch'] = schedule['max_epoch'][-1]
-            ptrn['check_after'] = schedule['check_after'][-1]
-            self.net.train(X,Y,params=ptrn)
             
-            self.training_loss = np.concatenate((self.training_loss,self.net.training_loss))
-            self.val_loss = np.concatenate((self.val_loss,self.net.val_loss))
             self.epochs = np.arange(self.val_loss.size)+1.0
 
             # save complete loss history
@@ -1897,9 +1917,6 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.net.val_loss = self.val_loss.copy()
             self.net.epochs = self.epochs.copy()
             self.net.save_loss_history()
-            
-            if self.verbose:
-                self.print_this('... ... revision lesson complete',self.logfile)
 
         # these help with HyperOpt interface
         self.modules = copy.deepcopy(self.net.modules) 
