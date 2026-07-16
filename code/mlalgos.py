@@ -871,6 +871,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- X: training sample features, shape ( n_input,nsamp)
             -- Y: training sample labels,   shape (n_output,nsamp)
             -- theta_dim: int; dimensionality of parameter space in BiSequential (not needed for other network families)
+               Note: in this case, FIRST theta_dim dimensions of X.shape[0] should be weights.
             ------------
             :: optional
             ------------
@@ -970,6 +971,12 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- verbose: bool (default True); whether or not to generate verbose output.
             -- logfile: str or None (default); path to pipe verbose output to. Defaults to stdout.
             ------
+            :: :: Optionally, for family 'biseq', also set the following
+            -- layers_w, widths_w, lglrates_w, wt_decays, htypes_w, decay_norm_w
+                  with same structure as their counterparts without '_w'.
+                  If set, these will define sampling for basis weights and the counterparts will define sampling for basis functions.
+                  If not set, all sampling will be using counterparts.
+            ------
             ------------
         """
         Utilities.__init__(self)
@@ -1024,6 +1031,14 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.p_drops = setup_dict.get('p_drops',None)
         self.slowdowns = setup_dict.get('slowdowns',{'min':1.0,'max':1.0})
         self.dream_schedules = setup_dict.get('dream_schedules',None)
+
+        if self.family == 'biseq':
+            self.layers_w = setup_dict.get('layers_w',copy.deepcopy(self.layers))
+            self.widths_w = setup_dict.get('widths_w',copy.deepcopy(self.widths))
+            self.lglrates_w = setup_dict.get('lglrates_w',copy.deepcopy(self.lglrates))
+            self.wt_decays_w = setup_dict.get('wt_decays_w',copy.deepcopy(self.wt_decays))
+            self.htypes_w = setup_dict.get('htypes_w',copy.deepcopy(self.htypes))
+            self.decay_norm_w = setup_dict.get('decay_norm_w',1*self.decay_norm)
         
         file_stem = setup_dict.get('file_stem','net')        
         self.file_stem = file_stem+'/net'
@@ -1049,8 +1064,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             else:
                 self.print_this("... ... standard training will be implemented",self.logfile)
 
-        if self.family_name in ['GAN','BiSequential']:
-            raise NotImplementedError("Sorry! HyperOpt is currently only available for Sequential family, not for "+self.family_name)
+        if self.family in ['gan']:
+            raise NotImplementedError("Sorry! HyperOpt is currently not available for "+self.family_name+" family.")
         
         self.n_samp = self.X.shape[1]
         self.data_dim = self.X.shape[0]
@@ -1135,11 +1150,21 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         if self.loss_type not in ['square','hinge','nll','nllm']:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in HyperOpt.")
+        if self.family == 'biseq':
+            if self.loss_type != 'square':
+                if self.verbose:
+                    print("Warning!: loss_type must be 'square' for 'biseq' family in HyperOpt. Setting to 'square'.")
+                self.loss_type = 'square'
             
         if self.decay_norm not in [1,2]:
             if self.verbose:
                 print("Warning!: decay_norm must be one of [1,2] in HyperOpt. Setting to 2.")
             self.decay_norm = 2 # safest is 2 if user is unsure about role of decay norm
+        if self.family == 'biseq':
+            if self.decay_norm_w not in [1,2]:
+                if self.verbose:
+                    print("Warning!: decay_norm_w must be one of [1,2] in HyperOpt. Setting to 2.")
+                self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
 
         if (self.loss_type == 'square') & (self.test_type not in ['perc','mse']):
             if self.verbose:
@@ -1162,6 +1187,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.check_dict(self.widths,'widths',int,1,np.inf)
         self.check_dict(self.lglrates,'lglrates',float,-np.inf,np.inf)
         self.check_dict(self.wt_decays,'wt_decays',float,0.0,np.inf)
+        if self.family == 'biseq':
+            self.check_dict(self.layers_w,'layers_w',int,1,np.inf)        
+            self.check_dict(self.widths_w,'widths_w',int,1,np.inf)
+            self.check_dict(self.lglrates_w,'lglrates_w',float,-np.inf,np.inf)
+            self.check_dict(self.wt_decays_w,'wt_decays_w',float,0.0,np.inf)
         self.check_dict(self.slowdowns,'slowdowns',float,1.0,np.inf)
         
         if self.thresholds is not None:
@@ -1174,8 +1204,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
             self.check_list(self.htypes,'htypes',self.htypes_superset)
         else:
             self.htypes = ['relu','tanh']
-        if self.layers['max'] == 1:
+        if (self.layers['max'] == 1) & (self.family in ['seq']):
             self.htypes = [None]
+            
+        if self.family == 'biseq':
+            if self.htypes_w is not None:
+                self.check_list(self.htypes_w,'htypes_w',self.htypes_superset)
+            else:
+                self.htypes_w = ['relu','tanh']
+            # if self.layers_w['max'] == 1:
+            #     self.htypes_w = [None]
             
         if ('lrelu' in self.htypes) & (self.lrelu_slopes is not None):
             self.check_dict(self.lrelu_slopes,'lrelu_slopes',float,-1.0,1.0)
@@ -1378,19 +1416,23 @@ class HyperOpt(Module,MLUtilities,Utilities):
             last_atype = 'sigm'
         elif self.loss_type == 'nllm':
             last_atype = 'sm'
-        else:
-            raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
+        # else:
+        #     raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         ##############################
         
         mb_count = int(np.sqrt(self.n_train))
         
-        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,'decay_norm':self.decay_norm,
+        pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
                 'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}            
         ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,
                 'dream_schedule':{}}
-        if self.family == 'biseq':
+        if self.family == 'seq':
+            pset['decay_norm'] = self.decay_norm
+        elif self.family == 'biseq':
             pset['theta_dim'] = self.theta_dim
+            pset['decay_norm_a'] = self.decay_norm
+            pset['decay_norm_w'] = self.decay_norm_w
 
         # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops,slowdowns,dream_schedules] --> N_lhc in number
         # ** pay attention to behaviour of fixed_width:
@@ -1408,24 +1450,35 @@ class HyperOpt(Module,MLUtilities,Utilities):
                       self.lglrates['min'],self.wt_decays['min'],self.lrelu_slopes['min'],self.thresholds['min'],self.p_drops['min'],self.slowdowns['min']]
         param_maxs = [self.layers['max']+1,self.widths['max']+1, # note +1: samples will be float, then rounded down using int()
                       self.lglrates['max'],self.wt_decays['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max'],self.slowdowns['max']]
+
+        if self.family == 'biseq':
+            param_mins_w = [self.layers_w['min'],self.widths_w['min'],
+                            self.lglrates_w['min'],self.wt_decays_w['min'],self.lrelu_slopes['min'],self.thresholds['min'],self.p_drops['min'],self.slowdowns['min']]
+            param_maxs_w = [self.layers_w['max']+1,self.widths_w['max']+1, # note +1: samples will be float, then rounded down using int()
+                            self.lglrates_w['max'],self.wt_decays_w['max'],self.lrelu_slopes['max'],self.thresholds['max'],self.p_drops['max'],self.slowdowns['max']]
+        
         if self.dream_schedules is not None:
             dream_defaults = {'dream_every':10,'corrupt_X':0.8,'corrupt_Y':0.1,'slowdown':1.0}
             for key in dream_defaults.keys():
                 param_mins.append(self.dream_schedules[key]['min'] if key in self.dream_schedules.keys() else dream_defaults[key])
                 param_maxs.append(self.dream_schedules[key]['max'] if key in self.dream_schedules.keys() else dream_defaults[key])
+            if self.family == 'biseq':
+                for key in dream_defaults.keys():
+                    param_mins_w.append(self.dream_schedules[key]['min'] if key in self.dream_schedules.keys() else dream_defaults[key])
+                    param_maxs_w.append(self.dream_schedules[key]['max'] if key in self.dream_schedules.keys() else dream_defaults[key])
+                    
         N_lhc = len(param_mins)
         
         params = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
         params[:,2] = 10**params[:,2] # convert lglrate to lrate
         sample_htype = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
-        sample_rf = self.rng.choice(self.reg_funs,size=self.max_config,replace=True).astype(str)
-
         if self.family == 'biseq':
             # in this case, interpret params,sample_htype as defining '**_a' parameters, and sample another set for '**_w' parameters
             params_w = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
             params_w[:,2] = 10**params_w[:,2] # convert lglrate to lrate
             sample_htype_w = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
         
+        sample_rf = self.rng.choice(self.reg_funs,size=self.max_config,replace=True).astype(str)
         
         sample_ds = [None]*self.max_config
         if self.dream_schedules is not None:
@@ -1447,37 +1500,47 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         if self.verbose:
             self.print_this("... setting tasks",self.logfile)
-
-        # for biseq
-        # self.La = int(params.get('La',1))
-        # self.n_layer_a = params.get('n_layer_a',[1]) # last n_layer_a should be number of non-trivial basis functions
-        # self.atypes_a = params.get('atypes_a',['lin']) 
-        # self.custom_atypes_a = params.get('custom_atypes_a',None)
-        # self.wt_decay_a = params.get('wt_decay_a',0.0)
-        # self.decay_norm_a = int(params.get('decay_norm_a',2))
-        # lrate_a = params.get('lrate_a',0.005)
-
-        # self.Lw = int(params.get('Lw',1))
-        # self.n_layer_w = params.get('n_layer_w',[1]) # last n_layer_w should be 1 + number of non-trivial basis functions
-        # self.atypes_w = params.get('atypes_w',['lin']) 
-        # self.custom_atypes_w = params.get('custom_atypes_w',None)
-        # self.wt_decay_w = params.get('wt_decay_w',0.0)
-        # self.decay_norm_w = int(params.get('decay_norm_w',2))        
-        # lrate_w = params.get('lrate_w',0.005)
             
         tasks = []
         for c in range(self.max_config):
-            # order: [L,W,lrate,wt_decay,lrelu_slope,threshold,p_drop]
+            # order: [L,W,lrate,wt_decay,lrelu_slope,threshold,p_drop,slowdown]
+            
             L = int(params[c,0])
-            pset['L'] = L            
+            if self.family == 'seq':
+                pset['L'] = L
+            elif self.family == 'biseq':
+                pset['La'] = L
+                Lw = int(params_w[c,0])
+                pset['Lw'] = Lw
+            
             W = int(params[c,1])
-            if self.fixed_width is None:
-                pset['n_layer'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L))) for l in range(1,L)] 
-            else:
-                pset['n_layer'] = [W]*(L-1) if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-2))
-            pset['n_layer'] += [self.target_dim]            
-            ptrn['lrate'] = params[c,2]
-            pset['wt_decay'] = params[c,3]
+            if self.family == 'seq':
+                if self.fixed_width is None:
+                    pset['n_layer'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L))) for l in range(1,L)] 
+                else:
+                    pset['n_layer'] = [W]*(L-1) if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-2))
+                pset['n_layer'] += [self.target_dim]
+            elif self.family == 'biseq':
+                if self.fixed_width is None:
+                    pset['n_layer_a'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L+1))) for l in range(1,L+1)] 
+                else:
+                    pset['n_layer_a'] = [W]*L if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-1))
+                W_w = int(params_w[c,1])
+                if self.fixed_width is None:
+                    pset['n_layer_w'] = [int(self.theta_dim*(self.theta_dim/W_w)**(-np.log(l+1)/np.log(Lw))) for l in range(1,Lw)] 
+                else:
+                    pset['n_layer_w'] = [W_w]*(Lw-1) if self.fixed_width else [W_w] + list(self.rng.randint(param_mins_w[1],high=param_maxs_w[1],size=Lw-2))
+                pset['n_layer_w'] += [pset['n_layer_a'][-1]+1]
+            
+            
+            if self.family == 'seq':
+                ptrn['lrate'] = params[c,2]
+                pset['wt_decay'] = params[c,3]
+            elif self.family == 'biseq':
+                ptrn['lrate_a'] = params[c,2]
+                pset['wt_decay_a'] = params[c,3]
+                ptrn['lrate_w'] = params_w[c,2]
+                pset['wt_decay_w'] = params_w[c,3]
             
             pset['lrelu_slope'] = params[c,4]
             pset['threshold'] = params[c,5]
@@ -1488,12 +1551,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ptrn['dream_schedule'] = sample_ds[c]
 
             htype = sample_htype[c]
-            # pset['atypes'] = [last_atype] if htype is None else [htype]*(L-1) + [last_atype]
-            if htype is None:
-                pset['atypes'] = [] # this will only happen if L==1
-            else:
-                pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,replace=True).astype(str))
-            pset['atypes'] += [last_atype] 
+            if self.family == 'seq':
+                if htype is None:
+                    pset['atypes'] = [] # this will only happen if L==1
+                else:
+                    pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,replace=True).astype(str))
+                pset['atypes'] += [last_atype] 
+            elif self.family == 'biseq':
+                pset['atypes_a'] = [htype]*L if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-1,replace=True).astype(str))
+                htype_w = sample_htype_w[c]
+                pset['atypes_w'] = [htype_w]*Lw if self.fixed_htype else [htype_w] + list(self.rng.choice(self.htypes_w,size=Lw-1,replace=True).astype(str))
             
             for it in range(self.n_iter):
                 tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
@@ -1522,7 +1589,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 net = copy.deepcopy(net_dict['net'])
                 net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
                 net.params['file_stem'] = net.file_stem
-                net.modules = gen_filestems(net.modules,net.file_stem)
+                if self.family == 'seq':
+                    net.modules = gen_filestems(net.modules,net.file_stem)
+                elif self.family == 'biseq':
+                    net.modules_a = gen_filestems(net.modules_a,net.file_stem)
+                    net.modules_w = gen_filestems(net.modules_w,net.file_stem)
                 net.save()
                 net.save_loss_history()
 
@@ -1557,7 +1628,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
             net = copy.deepcopy(best_net['net'])
             net.file_stem = self.file_stem
             net.params['file_stem'] = self.file_stem
-            net.modules = gen_filestems(net.modules,self.file_stem)
+            if self.family == 'seq':
+                net.modules = gen_filestems(net.modules,self.file_stem)
+            elif self.family == 'biseq':
+                net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
+                net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
             net.save()
             net.save_loss_history()
 
@@ -1996,6 +2071,7 @@ class BiSequential(Module,MLUtilities,Utilities):
             -- params['standardize_X']: boolean, whether or not to standardize training data features in train() (default True)
             -- params['standardize_Y']: boolean, whether or not to standardize training data labels in train() (default True)
             -- params['adam']: boolean, whether or not to use adam in GD update (default True)
+            -- params['lrelu_slope']: float in (-1,1), slope of leaky ReLU if used (default 1e-2).
             -- params['reg_fun']: str, type of regularization.
                                   Accepted values ['bn','drop','none'] for batch-normalization, dropout or no reg, respectively.
                                   If 'drop', then value of 'p_drop' must be specified. Default 'none'.
@@ -2033,6 +2109,7 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.standardize_Y = params.get('standardize_Y',True)
         self.params['standardize_Y'] = self.standardize_Y
         self.adam = params.get('adam',True)
+        self.lrelu_slope = params.get('lrelu_slope',1e-2)
         self.reg_fun = params.get('reg_fun','none')
         self.p_drop = params.get('p_drop',0.5)
         self.resume = params.get('resume',False)
@@ -2064,8 +2141,10 @@ class BiSequential(Module,MLUtilities,Utilities):
         self.check_init()
         
         # output of Modulate
-        self.modules_a = Modulate(self.n0a,self.n_layer_a,self.atypes_a,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_a,None,file_stem=self.file_stem+'_a',resume=self.resume)
-        self.modules_w = Modulate(self.n0w,self.n_layer_w,self.atypes_w,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_w,None,file_stem=self.file_stem+'_w',resume=self.resume)
+        self.modules_a = Modulate(self.n0a,self.n_layer_a,self.atypes_a,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_a,None,
+                                  file_stem=self.file_stem+'_a',lrelu_slope=self.lrelu_slope,resume=self.resume)
+        self.modules_w = Modulate(self.n0w,self.n_layer_w,self.atypes_w,self.rng,self.adam,self.reg_fun,self.p_drop,self.custom_atypes_w,None,
+                                  file_stem=self.file_stem+'_w',lrelu_slope=self.lrelu_slope,resume=self.resume)
         
         # set last activation module net_type
         self.modules_a[-1].net_type = self.net_type 
@@ -2259,6 +2338,7 @@ class BiSequential(Module,MLUtilities,Utilities):
     def train(self,X,Y,params={}):
         """ Main routine for training.
             Expect X.shape = (n0w+n0a,n_samp), Y.shape = (1,n_samp)
+            Note: FIRST n0w dimensions of X.shape[0] are weights.
         """
         max_epoch = params.get('max_epoch',100)
         lrate_a = params.get('lrate_a',0.005)
