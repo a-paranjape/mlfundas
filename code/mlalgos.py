@@ -1474,7 +1474,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         sample_htype = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
         if self.family == 'biseq':
             # in this case, interpret params,sample_htype as defining '**_a' parameters, and sample another set for '**_w' parameters
-            params_w = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins,param_maxs=param_maxs,rng=self.rng) # (max_config,n_lhc)
+            params_w = self.gen_latin_hypercube(Nsamp=self.max_config,dim=N_lhc,param_mins=param_mins_w,param_maxs=param_maxs_w,rng=self.rng) # (max_config,n_lhc)
             params_w[:,2] = 10**params_w[:,2] # convert lglrate to lrate
             sample_htype_w = self.rng.choice(self.htypes,size=self.max_config,replace=True).astype(str)
         
