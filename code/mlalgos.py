@@ -1593,8 +1593,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 if self.family == 'seq':
                     net.modules = gen_filestems(net.modules,net.file_stem)
                 elif self.family == 'biseq':
-                    net.modules_a = gen_filestems(net.modules_a,net.file_stem)
-                    net.modules_w = gen_filestems(net.modules_w,net.file_stem)
+                    net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
+                    net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
                 net.save()
                 net.save_loss_history()
 
@@ -2032,6 +2032,12 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
     def save_loss_history(self):
         """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
         return self.net.save_loss_history()
+    #########################################
+
+    #########################################
+    def load_loss_history(self):
+        """ Load loss history from file."""
+        return self.net.load_loss_history()
     #########################################
     
 
