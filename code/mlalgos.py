@@ -1496,6 +1496,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         X_train,Y_train,X_test,Y_test = self.gen_train()
         
         if self.curriculum is not None:
+            pset['family'] = self.family
             ptrn['curriculum'] = self.curriculum_train # this will be available from self.gen_train call
         
         if self.verbose:
@@ -1994,8 +1995,12 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.net.save_loss_history()
 
         # these help with HyperOpt interface
-        self.modules = copy.deepcopy(self.net.modules) 
-        self.modules[-1].net_type = self.net_type
+        if self.family == 'seq':
+            self.modules = copy.deepcopy(self.net.modules) 
+            self.modules[-1].net_type = self.net_type
+        elif self.family == 'biseq':
+            self.modules_a = copy.deepcopy(self.net.modules_a) 
+            self.modules_w = copy.deepcopy(self.net.modules_w) 
         
         if self.verbose:
             self.print_this('... all done',self.logfile)
@@ -2015,7 +2020,11 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
         # these help with HyperOpt interface
         self.net.file_stem = self.file_stem
         self.net.params['file_stem'] = self.file_stem
-        self.net.modules = copy.deepcopy(self.modules)
+        if self.family == 'seq':
+            self.net.modules = copy.deepcopy(self.modules)
+        elif self.family == 'biseq':
+            self.net.modules_a = copy.deepcopy(self.modules_a)
+            self.net.modules_w = copy.deepcopy(self.modules_w)
         return self.net.save()
     #########################################
 
