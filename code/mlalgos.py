@@ -1648,6 +1648,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             del best_net
             gc.collect()
 
+            if self.curriculum is not None:
+                net = copy.deepcopy(net.net)
             # return last stored network, training params and residual test statistic
             return net,params_train,teststat
     #############################
