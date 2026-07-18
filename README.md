@@ -11,6 +11,7 @@ Modules implementing basic machine learning algorithms for classification and re
     * `BiSequential` -- architecture to approximate functions $f(x,\theta)$ using a separable basis of the form $f(x,\theta) \approx \sum_{i=1}^{n} b_i(x) w_i(\theta)$ 
     * `GAN` -- generative adversarial network architecture using two `Sequential` networks, based on [Goodfellow+ (2014)](https://arxiv.org/abs/1406.2661)
     * `NetworkEnsembleObject` -- class to load collection of NN instances as an ensemble of trained networks.
+    * `CurriculumNetwork` -- class to implement basic curriculum training for specified network family.
     * `HyperOpt` -- class to enable randomized search over various NN architecture choices and hyperparameters powered by Latin hypercube sampling. Can be used to identify either a single best instance or an ensemble of instances.
     * `IllustrateNetwork` -- utility class to illustrate architecture of an existing network or network ensemble.
     * `BuildNN` -- **(deprecated)** class to systematically search over various classes of NN architecture. Superseded by `HyperOpt`.
@@ -24,6 +25,7 @@ This code arose from following the excellent course on [Introduction to Machine 
 * $\texttt{examples/HyperOpt\\_Example.ipynb}$: Jupyter notebook showing example usage of `HyperOpt` for flexible search over architectures and hyperparameters, along with comparison of single versus ensembled neural networks, for regression and classification problems.
 * $\texttt{examples/BiSequential.ipynb}$: Jupyter notebook showing example usage of existing `BiSequential` instance, based on [Paranjape & Sheth (2024)](https://arxiv.org/abs/2410.21374).
 * $\texttt{examples/GAN\\_Example.ipynb}$: Jupyter notebook showing example construction and usage of generative adversarial network using `GAN` instance.
+* $\texttt{examples/Curriculum\\_Example.ipynb}$: Jupyter notebook showing example of curriculum training using MNIST data and `CurriculumNetwork` instance optimized with `HyperOpt` Needs [tensorflow](https://pypi.org/project/tensorflow/) installed.
 * $\texttt{examples/BuildNN\\_Example.ipynb}$: Similar to $\texttt{examples/HyperOpt\\_Example.ipynb}$, showing example usage of `BuildNN` *(deprecated)*.
 
 ## Contact
