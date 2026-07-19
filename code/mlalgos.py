@@ -2658,6 +2658,9 @@ class BiSequential(Module,MLUtilities,Utilities):
         basis = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules_a[m])
+        if self.standardize_X:
+            basis.X_mean = self.X_mean[self.n0w:]
+            basis.X_std = self.X_std[self.n0w:]
         return basis
     #########################################
 
@@ -2678,6 +2681,9 @@ class BiSequential(Module,MLUtilities,Utilities):
         coeffs = Sequential(params=params_setup) # note Sequential not BiSequential
         for m in range(len(coeffs.modules)):
             coeffs.modules[m] = copy.deepcopy(self.modules_w[m])
+        if self.standardize_X:
+            coeffs.X_mean = self.X_mean[:self.n0w]
+            coeffs.X_std = self.X_std[:self.n0w]
 
         # note that result needs to be modified in case original standardization is True. see examples/BiSequential.ipynb.
         return coeffs
