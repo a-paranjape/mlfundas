@@ -1915,6 +1915,7 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.print_this('... initializing network',self.logfile)
         
         self.net = self.family_dict[self.family]['module'](params=params)
+        self.resume = self.net.resume
         self.net_type = self.net.net_type
         self.file_stem = self.net.file_stem
     #########################################
@@ -2002,7 +2003,9 @@ class CurriculumNetwork(Module,MLUtilities,Utilities):
             self.modules[-1].net_type = self.net_type
         elif self.family == 'biseq':
             self.modules_a = copy.deepcopy(self.net.modules_a) 
-            self.modules_w = copy.deepcopy(self.net.modules_w) 
+            self.modules_w = copy.deepcopy(self.net.modules_w)
+            
+        self.net.params['resume'] = self.resume
         
         if self.verbose:
             self.print_this('... all done',self.logfile)
