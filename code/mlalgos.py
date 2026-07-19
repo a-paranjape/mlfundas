@@ -2469,6 +2469,8 @@ class BiSequential(Module,MLUtilities,Utilities):
                 # update activations. prediction for validation data
                 Ypred_val,apred_val,wpred_val = self.forward(X_val)
                 self.val_loss[t] = self.loss.forward(Ypred_val,Y_val) # calculate validation loss, update self.loss
+                if (self.wt_decay_a > 0.0) | (self.wt_decay_w > 0.0):
+                    self.val_loss[t] += self.calc_loss_decay()
                 self.val_loss[t] /= n_val
                 if t > check_after:
                     x = np.arange(t-check_after,t+1)
