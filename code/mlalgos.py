@@ -1326,47 +1326,71 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         X_train = self.X[:,ind_train].copy()
         X_test = self.X[:,ind_test].copy()
-
+        # # CHANGE THIS TO
+        # self.X_train = self.X[:,ind_train].copy()
+        # self.X_test = self.X[:,ind_test].copy()
+        
         if self.family_name not in ['GAN']:
             Y_train = self.Y[:,ind_train].copy()
             Y_test = self.Y[:,ind_test].copy()
         else:
             Y_train = None
             Y_test = None
-
+        # # CHANGE THIS TO            
+        # if self.family_name not in ['GAN']:
+        #     self.Y_train = self.Y[:,ind_train].copy()
+        #     self.Y_test = self.Y[:,ind_test].copy()
+        # else:
+        #     self.Y_train = None
+        #     self.Y_test = None
+            
         del ind_train,ind_test
+        gc.collect()
 
         return X_train,Y_train,X_test,Y_test
+        # # CHANGE THIS TO            
+        # return
     #############################
 
     #############################
+    # # CHANGE THIS TO            
+    # def queue_train(self,r,pset,ptrn,cnt_max,mdict):
     def queue_train(self,r,X_train,Y_train,X_test,Y_test,pset,ptrn,cnt_max,mdict):
         """ Convenience function for use with MLUtilities.run_processes(). Expect r >= 0."""
+
+        ##############
+        # REPLACE X_train,Y_train,X_test,Y_test BELOW
+        # WITH self.X_train,self.Y_train,self.X_test,self.Y_test
+        ##############
         
-        pset['file_stem'] = pset['file_stem'] + '_r{0:d}'.format(r)
-        
-        net = self.family_module(params=pset)
+        pset['file_stem'] = pset['file_stem'] + '_r{0:d}'.format(r) 
+
+        # instantiate network
+        net = self.family_module(params=pset) 
+
+        # train
         if self.family_name in ['GAN']:
             raise NotImplementedError()
             # SEE BELOW
-            net.train(X_train,params=ptrn)
+            net.train(X_train,params=ptrn) # --> HERE
         else:
-            net.train(X_train,Y_train,params=ptrn)
+            net.train(X_train,Y_train,params=ptrn) # --> HERE
 
+        # test
         # BELOW NEEDS TO BE MODIFIED FOR HANDLING GAN
         if net.net_type == 'reg':
             if self.test_type == 'perc':
-                resid = net.predict(X_test)/(Y_test + 1e-15) - 1.0
+                resid = net.predict(X_test)/(Y_test + 1e-15) - 1.0 # --> HERE
                 resid = resid.flatten()
                 ts = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
             elif self.test_type == 'mse':
-                ts = np.sum((net.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15)
+                ts = np.sum((net.predict(X_test) - Y_test)**2)/(Y_test.size + 1e-15) # --> HERE
                 ts = np.sqrt(ts)
         else:
-            if Y_test.shape[0] == 1:
-                ts = np.where(np.rint(net.predict(X_test)) != np.rint(Y_test))[0].size/Y_test.shape[1]
+            if Y_test.shape[0] == 1: # --> HERE
+                ts = np.where(np.rint(net.predict(X_test)) != np.rint(Y_test))[0].size/Y_test.shape[1] # --> HERE
             else:
-                asmc = self.assess_multi_classification(net.predict(X_test),Y_test)
+                asmc = self.assess_multi_classification(net.predict(X_test),Y_test) # --> HERE
                 ts = 1.0 - asmc['accuracy']
                 asmc = None
             # this is fraction of predictions that are incorrect
@@ -1416,8 +1440,6 @@ class HyperOpt(Module,MLUtilities,Utilities):
             last_atype = 'sigm'
         elif self.loss_type == 'nllm':
             last_atype = 'sm'
-        # else:
-        #     raise ValueError("loss_type must be in ['square','hinge','nll','nllm']")
         ##############################
         
         mb_count = int(np.sqrt(self.n_train))
@@ -1494,6 +1516,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         # sample training+test data
         X_train,Y_train,X_test,Y_test = self.gen_train()
+        # # CHANGE THIS TO
+        # self.gen_train()
         
         if self.curriculum is not None:
             pset['family'] = self.family
@@ -1565,7 +1589,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
             
             for it in range(self.n_iter):
                 tasks.append((X_train,Y_train,X_test,Y_test,copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
+                # # CHANGE THIS TO
+                # tasks.append((copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
 
+        # REMOVE TWO LINES BELOW
         del X_train,Y_train,X_test,Y_test
         gc.collect()
 
