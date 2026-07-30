@@ -1733,6 +1733,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         for key in self.keys:            
             with open(key+'.pkl', 'rb') as f:
                 params_setup = pickle.load(f)
+            params_setup['file_stem'] = key # to avoid path resolution issues
             net = Sequential(params=params_setup)
             net.load()
             net.load_loss_history()
