@@ -354,6 +354,8 @@ class Sequential(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning!: lrelu_slope must be in range (-1,1) in Sequential(). Setting to +1e-2.")
             self.lrelu_slope = 1e-2
+
+        return
     #########################################
             
 
@@ -702,7 +704,7 @@ class Sequential(Module,MLUtilities,Utilities):
 
     #########################################
     # to be called after generating instance of Sequential() with correct setup params,
-    # e.g. after invoking self.save() or after call to load method of BuildNN().
+    # e.g. after invoking self.save() or after call to load method of HyperOpt().
     #########################################
     def load(self):
         """ Load weights and setup params from file(s). """
@@ -801,6 +803,9 @@ class Sequential(Module,MLUtilities,Utilities):
         hidden = Sequential(params=params_setup)
         for m in range(len(hidden.modules)):
             hidden.modules[m] = copy.deepcopy(self.modules[m])
+        if self.standardize_X:
+            hidden.X_mean = self.X_mean
+            hidden.X_std = self.X_std
             
         return hidden
     #########################################
@@ -820,9 +825,13 @@ class Sequential(Module,MLUtilities,Utilities):
         basis = Sequential(params=params_setup)
         for m in range(len(basis.modules)):
             basis.modules[m] = copy.deepcopy(self.modules[m])
+        if self.standardize_X:
+            basis.X_mean = self.X_mean
+            basis.X_std = self.X_std
         return basis
     #########################################
 
+    
     #########################################
     # to be called after invoking self.extract_basis()
     #########################################
@@ -869,13 +878,17 @@ class HyperOpt(Module,MLUtilities,Utilities):
             :: mandatory
             ------------
             -- X: training sample features, shape ( n_input,nsamp)
-            -- Y: training sample labels,   shape (n_output,nsamp)
-            -- theta_dim: int; dimensionality of parameter space in BiSequential (not needed for other network families)
+            -- Y: training sample labels,   shape (n_output,nsamp) [ignore for families 'gan','autoenc']
+            -- theta_dim: int; dimensionality of parameter space in BiSequential [ignore for other network families]
                Note: in this case, FIRST theta_dim dimensions of X.shape[0] should be weights.
             ------------
             :: optional
             ------------
-            -- family: str [default 'seq']; one of 'seq' (Sequential), 'biseq' (BiSequential), 'gan' (GAN)
+            -- family: str [default 'seq']; one of 
+                       -- 'seq' (Sequential) 
+                       -- 'biseq' (BiSequential) 
+                       -- 'gan' (GAN)
+                       -- 'autoenc' (AutoEncoder)
             ------
             :: :: training sample
             ------
@@ -888,8 +901,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ------
             :: :: training setup
             ------
-            -- curriculum: None (default) or list of ints or list of slices. If not None, CurriculumNetwork with specified family and curriculum will be trained.
-
+            -- curriculum: None (default) or list of ints or list of slices. 
+                           If not None, CurriculumNetwork with specified family and curriculum will be trained.
             -- standardize_X: bool (default True); whether or not to standardize features.
             -- standardize_Y: bool (default True); whether or not to standardize labels.
             -- max_epoch: int (default 1000000); maximum number of training epochs
@@ -913,7 +926,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- fixed_width: bool or None (default True)
                             True : each layer l has the same width W_l = W sampled from the range
                             False: each layer l has a width W_l sampled independently from the range
-                            None: layer widths telescope from data dim to sampled W (similar to 'autoenc' behaviour of BuildNN)
+                            None: layer widths telescope from data dim to sampled W (which is bottleneck for 'autoenc' family)
             -- fixed_htype: bool (default True)
                             True : each layer l has the same activation A_l = A sampled from the htypes list
                             False: each layer l has an activation A_l sampled independently from the htypes list
@@ -976,6 +989,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
                   with same structure as their counterparts without '_w'.
                   If set, these will define sampling for basis weights and the counterparts will define sampling for basis functions.
                   If not set, all sampling will be using counterparts.
+            ------
+            :: :: Optionally, for family 'autoenc', also set the following
+            -- denoise: bool [default False]; whether or not to implement denoising
+            -- noise_level: float > 0.0 [default None]; if denoise == True, specify noise level (as Gaussian std) to add to input.
             ------
             ------------
         """
@@ -1886,6 +1903,158 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
         else:
             return
     #########################################    
+#################################
+
+
+#################################
+# Class for implementing autoencoder with specified family
+#################
+class AutoEncoder(Module,MLUtilities,Utilities):
+    #########################################
+    def __init__(self,params={}):
+        """ Class to implement autoencoder with specified family. 
+            params should be dictionary with a subset of following keys:
+            -- family: str [default 'seq']; one of 'seq' (Sequential) [will eventually include Convolutional as well]
+            -- bottleneck_layer: int [default min(1,params['L']//2)]; location of bottleneck layer.
+            -- denoise: bool [default False]; whether or not to implement denoising
+            -- noise_level: float > 0.0 [default None]; if denoise == True, specify noise level (as Gaussian std) to add to input.
+            ** Remaining keys should be appropriate for the chosen family. See the respective doc string. **
+            Note 1: Only params['X'] containing training data to be specified, no labels required or used.
+            Note 2: Invoking self.load() will instantiate self.encoder and self.decoder as network family instances
+                    and set self.n_latent to dimension of latent (bottleneck) space.
+                    self.load() will be invoked by self.train() after completing training.
+        """
+        Utilities.__init__(self)
+        
+        self.family_dict = {'seq':{'name':'Sequential','module':Sequential}}        
+        self.family = params.get('family','seq')
+        
+        self.params = copy.deepcopy(params)
+
+        # ensure at least 1 hidden layer
+        self.L = self.params.get('L',2)
+        self.params['L'] = self.L
+        self.bottleneck_layer = self.params.get('bottleneck_layer',int(np.min([1,self.L//2])))
+
+        # force loss to be square reconstruction loss
+        self.loss_type = self.params.get('loss_type','square')
+        self.params['loss_type'] = self.loss_type
+
+        self.denoise = self.params.get('denoise',False)
+        self.noise_level = self.params.get('noise_level',None)
+        
+        self.verbose = self.params.get('verbose',True)
+        self.logfile = self.params.get('logfile',None)
+
+        if self.verbose:
+            self.print_this('Autoencoder with family: '+self.family,self.logfile)
+
+        if self.denoise:
+            if self.noise_level is None:
+                raise Exception("Denoising requires noise_level to be specified as positive float (used as Gaussian std).")
+            elif self.noise_level <= 0.0:
+                raise Exception("Denoising requires strictly positive noise_level (used as Gaussian std).")
+            if self.verbose:
+                self.print_this('... training will denoise with noise level: {0:.2e}'.format(self.noise_level),self.logfile)
+            
+        if self.verbose:
+            self.print_this('... initializing network',self.logfile)
+
+        self.net = self.family_dict[self.family]['module'](params=self.params)
+        self.file_stem = self.net.file_stem        
+    #########################################
+
+    
+    #########################################
+    def train(self,X,params={}):
+        """ Train autoencoder.
+            -- X,params : as appropriate for training chosen family
+        """
+        
+        noise = self.noise_level*self.net.rng.randn(X.shape[0],X.shape[1]) if self.denoise else 0.0
+        
+        self.net.train(X + noise, X.copy(), params=params)
+        
+        self.training_loss = self.net.training_loss.copy()
+        self.val_loss = self.net.val_loss.copy()
+        self.epochs = self.net.epochs.copy()
+
+        # these help with HyperOpt interface
+        if self.family == 'seq':
+            self.modules = copy.deepcopy(self.net.modules) 
+            self.modules[-1].net_type = self.net.net_type
+
+        # load encoder and decoder
+        if self.verbose:
+            self.print_this("... instantiating encoder and decoder",self.logfile)
+        self.load()
+        
+        if self.verbose:
+            self.print_this('... all done',self.logfile)
+                
+        return
+    #########################################
+    
+    #########################################
+    # needed for HyperOpt
+    def predict(self,X):
+        """ Predict targets for given data set. """
+        return self.net.predict(X)
+    #########################################
+
+    #########################################
+    def save(self):
+        """ Save current weights and setup params to file(s). """
+        # these help with HyperOpt interface
+        self.net.file_stem = self.file_stem
+        self.net.params['file_stem'] = self.file_stem
+        if self.family == 'seq':
+            self.net.modules = copy.deepcopy(self.modules)
+        return self.net.save()
+    #########################################
+
+    #########################################
+    def save_loss_history(self):
+        """ Save loss history to file. (Can only be invoked if self.training_loss and self.val_loss exist)."""
+        return self.net.save_loss_history()
+    #########################################
+
+    #########################################
+    def load_loss_history(self):
+        """ Load loss history from file."""
+        return self.net.load_loss_history()
+    #########################################
+
+    #########################################
+    # to be called after generating instance of AutoEncoder() with correct setup params,
+    # e.g. after invoking self.save() or after call to load method of HyperOpt().
+    #########################################
+    def load(self):
+        """ Load weights and setup params from file(s) and extract encoder and decoder as network family instances. """
+        self.net.load()
+
+        # extract encoder as specified hidden (bottleneck) layer
+        self.encoder = self.net.extract_hidden_features(layer=self.bottleneck_layer)
+        self.encoder.save = None # for safety, to avoid accidental overwriting
+
+        # extract decoder
+        self.n_latent = self.encoder.n_layer[-1]      # extract dimension of latent space        
+        L_dec = self.L - self.bottleneck_layer        # set number of layers in decoder
+        params_setup = copy.deepcopy(self.net.params) # setup params for decoder
+        params_setup['L'] = L_dec
+        params_setup['data_dim'] = self.n_latent
+        for l in range(self.bottleneck_layer):
+            params_setup['n_layer'].pop(0)
+            params_setup['atypes'].pop(0)
+            
+        self.decoder = self.family_dict[self.family]['module'](params=params_setup)
+        for m in range(len(self.decoder.modules)):
+            self.decoder.modules[m] = copy.deepcopy(self.net.modules[m + self.bottleneck_layer])
+        
+        self.decoder.save = None # for safety, to avoid accidental overwriting
+        
+        return
+    #########################################
 #################################
 
 
