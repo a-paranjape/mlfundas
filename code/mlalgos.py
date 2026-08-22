@@ -1630,8 +1630,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 if htype is None:
                     pset['atypes'] = [] # this will only happen if L==1
                 else:
-                    pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,
-                                                                                                           replace=True).astype(str))
+                    pset['atypes'] = [htype]*(pset['L']-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=pset['L']-2,
+                                                                                                                   replace=True).astype(str))
                 pset['atypes'] += [last_atype] 
             elif self.family == 'biseq':
                 pset['atypes_a'] = [htype]*L if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-1,
@@ -1703,9 +1703,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
             best_net = copy.deepcopy(all_nets[ind_best])
             net = copy.deepcopy(best_net['net'])
             net.file_stem = self.file_stem
-            net.params['file_stem'] = self.file_stem
-            if self.family == 'seq':
-                net.modules = gen_filestems(net.modules,self.file_stem)
+            net.params['file_stem'] = net.file_stem
+            if self.family in ['seq','autoenc']:
+                net.modules = gen_filestems(net.modules,net.file_stem)
             elif self.family == 'biseq':
                 net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
                 net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
@@ -2016,6 +2016,8 @@ class AutoEncoder(Module,MLUtilities,Utilities):
             self.print_this('... initializing network',self.logfile)
 
         self.net = self.family_dict[self.family]['module'](params=self.params)
+        # self.resume = self.net.resume
+        self.net_type = self.net.net_type
         self.file_stem = self.net.file_stem        
     #########################################
 
@@ -2063,7 +2065,7 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         # these help with HyperOpt interface
         self.net.file_stem = self.file_stem
         self.net.params['file_stem'] = self.file_stem
-        if self.family == 'seq':
+        if self.family in ['seq']:
             self.net.modules = copy.deepcopy(self.modules)
         return self.net.save()
     #########################################
