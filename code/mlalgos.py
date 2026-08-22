@@ -933,12 +933,14 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ------
             :: :: sampled parameters
             ------
-            -- layers: range for number of layers
+            -- layers: range for number of layers L
                        dict with structure 
                        {'min': int (default 1), 'max': int (default 3)}
+                       Note: for AutoEncoder, L is interpreted as length of, both, encoder and decoder. (Can be made optionally asymmetric in future.)
             -- widths: range for layer width
                        dict with structure 
                        {'min': int (default 2), 'max': int (default 2)}
+                       Note: this parameter will be interpreted as width of bottleneck layer for AutoEncoder family.
             -- lglrates: range for log10(learning rate)
                          dict with structure 
                          {'min': float (default -2.0), 'max': float (default -1.0)}
@@ -1000,7 +1002,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         self.family_dict = {'seq':{'name':'Sequential','module':Sequential},
                             'biseq':{'name':'BiSequential','module':BiSequential},
-                            'gan':{'name':'GAN','module':GAN}}
+                            'gan':{'name':'GAN','module':GAN},
+                            'autoenc':{'name':'AutoEncoder','module':AutoEncoder}}
 
         self.htypes_superset = ['tanh','relu','lrelu','splus','sin','requ']
         self.reg_funs_superset = ['bn','drop','none']
@@ -1056,7 +1059,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
             self.wt_decays_w = setup_dict.get('wt_decays_w',copy.deepcopy(self.wt_decays))
             self.htypes_w = setup_dict.get('htypes_w',copy.deepcopy(self.htypes))
             self.decay_norm_w = setup_dict.get('decay_norm_w',1*self.decay_norm)
-        
+
+        if self.family == 'autoenc':
+            self.denoise = setup_dict.get('denoise',False)
+            self.noise_level = setup_dict.get('noise_level',None)
+            
         file_stem = setup_dict.get('file_stem','net')        
         self.file_stem = file_stem+'/net'
         Path(self.file_stem).mkdir(parents=True,exist_ok=True) # folder to store temporary networks
@@ -1086,13 +1093,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         self.n_samp = self.X.shape[1]
         self.data_dim = self.X.shape[0]
-        if self.family_name == 'BiSequential':
+        if self.family == 'biseq':
             self.data_dim -= self.theta_dim
-        self.target_dim = self.Y.shape[0]
+        if self.family in ['seq','biseq']:
+            self.target_dim = self.Y.shape[0]
+        elif self.family in ['autoenc']:
+            self.target_dim = self.X.shape[0]
         self.n_train = np.rint(self.train_frac*self.n_samp).astype(int)
         self.n_test = self.n_samp - self.n_train
         if self.verbose:
-            if self.family_name != 'BiSequential':
+            if self.family != 'biseq':
                 self.print_this("... found data set of dimension {0:d} with targets of dimension {1:d}"
                                 .format(self.data_dim,self.target_dim),self.logfile)
             else:
@@ -1114,6 +1124,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
             if self.wt_decays['max'] > 0.0:
                 self.print_this("... weight decays will use norm {0:d}".format(self.decay_norm),self.logfile)
+            if self.family == 'autoenc':
+                if self.denoise:
+                    self.print_this('... AutoEncoder training will denoise with noise level: {0:.2e}'.format(self.noise_level),self.logfile)
         
         self.rng = np.random.RandomState(self.seed)
         
@@ -1132,7 +1145,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         if self.X is None:
             raise TypeError("HyperOpt needs data set X (d,n_samp) to be specified.")
 
-        if self.family not in ['gan']:
+        if self.family not in ['gan','autoenc']:
             if self.Y is None:
                 raise TypeError("HyperOpt needs data set Y (K,n_samp) to be specified.")
             if self.X.shape[1] != self.Y.shape[1]:
@@ -1144,6 +1157,18 @@ class HyperOpt(Module,MLUtilities,Utilities):
             if self.Y.shape[0] != 1:
                 raise Exception("HyperOpt for BiSequential needs target dimension = 1.")
 
+        if self.family == 'autoenc':
+            if self.fixed_width is not None:
+                if self.verbose:
+                    print("Warning: fixed_width should be None for family 'autoenc' in HyperOpt. Setting to None.")
+                self.fixed_width = None
+                
+            if self.denoise:
+                if self.noise_level is None:
+                    raise Exception("Denoising requires noise_level to be specified as positive float (used as Gaussian std).")
+                elif self.noise_level <= 0.0:
+                    raise Exception("Denoising requires strictly positive noise_level (used as Gaussian std).")
+            
         if self.curriculum is not None:
             for c in self.curriculum:
                 if not (isinstance(c,int) | isinstance(c,np.int32) | isinstance(c,np.int64) | isinstance(c,slice)):
@@ -1167,10 +1192,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         if self.loss_type not in ['square','hinge','nll','nllm']:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in HyperOpt.")
-        if self.family == 'biseq':
+        if self.family in ['biseq','autoenc']:
             if self.loss_type != 'square':
                 if self.verbose:
-                    print("Warning!: loss_type must be 'square' for 'biseq' family in HyperOpt. Setting to 'square'.")
+                    print("Warning!: loss_type must be 'square' for '"+self.family+"' family in HyperOpt. Setting to 'square'.")
                 self.loss_type = 'square'
             
         if self.decay_norm not in [1,2]:
@@ -1188,6 +1213,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 print("Warning: test_type for regression should be one of ['perc','mse'] in HyperOpt. Setting to 'perc'.")
             self.test_type = 'perc'
 
+        ##################
+        # !!!!!!!!!!!!!!!!
+        # ENSEMBLE SHOULD BE EXTENDABLE TO AutoEncoder
+        # !!!!!!!!!!!!!!!!
+        ##################
         if self.ensemble & (self.family != 'seq'):
             if self.verbose:
                 print("Warning: ensemble currently only available for Sequential family in HyperOpt. Setting ensemble = False.")
@@ -1199,8 +1229,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                       .format(self.n_iter*self.max_config))
             self.ensemble_size = self.n_iter*self.max_config
 
-
-        self.check_dict(self.layers,'layers',int,1,np.inf)        
+        self.check_dict(self.layers,'layers',int,1,np.inf) 
         self.check_dict(self.widths,'widths',int,1,np.inf)
         self.check_dict(self.lglrates,'lglrates',float,-np.inf,np.inf)
         self.check_dict(self.wt_decays,'wt_decays',float,0.0,np.inf)
@@ -1346,12 +1375,15 @@ class HyperOpt(Module,MLUtilities,Utilities):
         self.X_train = self.X[:,ind_train].copy()
         self.X_test = self.X[:,ind_test].copy()
         
-        if self.family_name not in ['GAN']:
+        if self.family not in ['gan','autoenc']:
             self.Y_train = self.Y[:,ind_train].copy()
             self.Y_test = self.Y[:,ind_test].copy()
         else:
             self.Y_train = None
-            self.Y_test = None
+            if self.family == 'autoenc':
+                self.Y_test = self.X_test.copy() # to avoid additional condition in self.queue_train()
+            else:
+                self.Y_test = None
             
         del ind_train,ind_test
         gc.collect()
@@ -1369,28 +1401,30 @@ class HyperOpt(Module,MLUtilities,Utilities):
         net = self.family_module(params=pset) 
 
         # train
-        if self.family_name in ['GAN']:
+        if self.family in ['gan']:
             raise NotImplementedError()
             # SEE BELOW
-            net.train(self.X_train,params=ptrn) # --> HERE
+            # net.train(self.X_train,params=ptrn)
+        elif self.family in ['autoenc']:
+            net.train(self.X_train,params=ptrn)
         else:
-            net.train(self.X_train,self.Y_train,params=ptrn) # --> HERE
+            net.train(self.X_train,self.Y_train,params=ptrn)
 
         # test
         # BELOW NEEDS TO BE MODIFIED FOR HANDLING GAN
         if net.net_type == 'reg':
             if self.test_type == 'perc':
-                resid = net.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0 # --> HERE
+                resid = net.predict(self.X_test)/(self.Y_test + 1e-15) - 1.0
                 resid = resid.flatten()
                 ts = 0.5*(np.percentile(resid,95) - np.percentile(resid,5))
             elif self.test_type == 'mse':
-                ts = np.sum((net.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15) # --> HERE
+                ts = np.sum((net.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
                 ts = np.sqrt(ts)
         else:
-            if self.Y_test.shape[0] == 1: # --> HERE
-                ts = np.where(np.rint(net.predict(self.X_test)) != np.rint(self.Y_test))[0].size/self.Y_test.shape[1] # --> HERE
+            if self.Y_test.shape[0] == 1:
+                ts = np.where(np.rint(net.predict(self.X_test)) != np.rint(self.Y_test))[0].size/self.Y_test.shape[1]
             else:
-                asmc = self.assess_multi_classification(net.predict(self.X_test),self.Y_test) # --> HERE
+                asmc = self.assess_multi_classification(net.predict(self.X_test),self.Y_test)
                 ts = 1.0 - asmc['accuracy']
                 asmc = None
             # this is fraction of predictions that are incorrect
@@ -1400,7 +1434,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         # save this network (weights, setup dict and loss history) to file
         net.save()
-        if self.family_name in ['GAN']:
+        if self.family in ['gan']:
             raise NotImplementedError()
         # !! Below will currently fail for GAN !! .. update GAN to include save_loss_history, update below to account for different naming convention for GAN loss.        
         imax_trn = np.where(net.training_loss > 0.0)[0][-1]
@@ -1431,7 +1465,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             self.print_this("Initiating search... ",self.logfile)
 
         ##############################
-        if self.family_name in ['GAN']:
+        if self.family in ['gan']:
             raise NotImplementedError()
         # change below to adapt to GAN conventions
         if self.loss_type in ['square','hinge']:
@@ -1455,6 +1489,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
             pset['theta_dim'] = self.theta_dim
             pset['decay_norm_a'] = self.decay_norm
             pset['decay_norm_w'] = self.decay_norm_w
+        elif self.family == 'autoenc':
+            pset['denoise'] = self.denoise
+            pset['noise_level'] = self.noise_level
 
         # LHC: [layers,widths,lglrates,wt_decays,lrelu_slopes,thresholds,p_drops,slowdowns,dream_schedules] --> N_lhc in number
         # ** pay attention to behaviour of fixed_width:
@@ -1535,6 +1572,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 pset['La'] = L
                 Lw = int(params_w[c,0])
                 pset['Lw'] = Lw
+            elif self.family == 'autoenc':
+                pset['L'] = 2*L # note factor of 2
             
             W = int(params[c,1])
             if self.family == 'seq':
@@ -1552,11 +1591,24 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 if self.fixed_width is None:
                     pset['n_layer_w'] = [int(self.theta_dim*(self.theta_dim/W_w)**(-np.log(l+1)/np.log(Lw))) for l in range(1,Lw)] 
                 else:
-                    pset['n_layer_w'] = [W_w]*(Lw-1) if self.fixed_width else [W_w] + list(self.rng.randint(param_mins_w[1],high=param_maxs_w[1],size=Lw-2))
+                    pset['n_layer_w'] = [W_w]*(Lw-1) if self.fixed_width else [W_w] + list(self.rng.randint(param_mins_w[1],
+                                                                                                            high=param_maxs_w[1],size=Lw-2))
                 pset['n_layer_w'] += [pset['n_layer_a'][-1]+1]
-            
-            
-            if self.family == 'seq':
+            elif self.family == 'autoenc':
+                pset['bottleneck_layer'] = L # pset['L']//2
+                
+                # excluding input layer, encoder has L layers, last width W
+                layers_enc = [int(self.data_dim*(W/self.data_dim)**(np.log(l+1)/np.log(L+1))) for l in range(1,L+1)]
+                
+                # including output layer, decoder has L layers
+                # last width self.data_dim, rest are reverse of encoder layers excluding bottleneck
+                # layers_dec = [int(self.data_dim*(W/self.data_dim)**(np.log(l)/np.log(L+1))) for l in range(L,0,-1)]
+                layers_dec = layers_enc[::-1][1:] + [self.data_dim]
+                
+                pset['n_layer'] = layers_enc + layers_dec 
+
+                
+            if self.family in ['seq','autoenc']:
                 ptrn['lrate'] = params[c,2]
                 pset['wt_decay'] = params[c,3]
             elif self.family == 'biseq':
@@ -1574,16 +1626,19 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ptrn['dream_schedule'] = sample_ds[c]
 
             htype = sample_htype[c]
-            if self.family == 'seq':
+            if self.family in ['seq','autoenc']:
                 if htype is None:
                     pset['atypes'] = [] # this will only happen if L==1
                 else:
-                    pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,replace=True).astype(str))
+                    pset['atypes'] = [htype]*(L-1) if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-2,
+                                                                                                           replace=True).astype(str))
                 pset['atypes'] += [last_atype] 
             elif self.family == 'biseq':
-                pset['atypes_a'] = [htype]*L if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-1,replace=True).astype(str))
+                pset['atypes_a'] = [htype]*L if self.fixed_htype else [htype] + list(self.rng.choice(self.htypes,size=L-1,
+                                                                                                     replace=True).astype(str))
                 htype_w = sample_htype_w[c]
-                pset['atypes_w'] = [htype_w]*Lw if self.fixed_htype else [htype_w] + list(self.rng.choice(self.htypes_w,size=Lw-1,replace=True).astype(str))
+                pset['atypes_w'] = [htype_w]*Lw if self.fixed_htype else [htype_w] + list(self.rng.choice(self.htypes_w,size=Lw-1,
+                                                                                                          replace=True).astype(str))
             
             for it in range(self.n_iter):
                 tasks.append((copy.deepcopy(pset),copy.deepcopy(ptrn),cnt_max))
