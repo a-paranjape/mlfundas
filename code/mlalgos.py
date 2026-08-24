@@ -1005,7 +1005,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                             'gan':{'name':'GAN','module':GAN},
                             'autoenc':{'name':'AutoEncoder','module':AutoEncoder}}
 
-        self.htypes_superset = ['tanh','relu','lrelu','splus','sin','requ']
+        self.htypes_superset = ['tanh','relu','lrelu','splus','sin','requ','lin']
         self.reg_funs_superset = ['bn','drop','none']
         
         self.X = setup_dict.get('X',None)
