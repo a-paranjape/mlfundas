@@ -1995,6 +1995,11 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         self.loss_type = self.params.get('loss_type','square')
         self.params['loss_type'] = self.loss_type
 
+        # ensure consistent standardization
+        self.standardize = self.params.get('standardize_X',True)
+        self.params['standardize_X'] = self.standardize
+        self.params['standardize_Y'] = self.standardize
+        
         self.denoise = self.params.get('denoise',False)
         self.noise_level = self.params.get('noise_level',None)
         
