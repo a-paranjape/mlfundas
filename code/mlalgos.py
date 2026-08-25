@@ -1192,11 +1192,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         if self.loss_type not in ['square','hinge','nll','nllm']:
             raise ValueError("loss must be one of ['square','hinge','nll','nllm'] in HyperOpt.")
-        if self.family in ['biseq','autoenc']:
-            if self.loss_type != 'square':
-                if self.verbose:
-                    print("Warning!: loss_type must be 'square' for '"+self.family+"' family in HyperOpt. Setting to 'square'.")
-                self.loss_type = 'square'
+        
+        if (self.family == 'biseq') & (self.loss_type != 'square'):
+            if self.verbose:
+                print("Warning!: loss_type must be 'square' for 'biseq' family in HyperOpt. Setting to 'square'.")
+            self.loss_type = 'square'
+
+        if (self.family == 'autoenc') & (self.loss_type not in ['square','nll']):
+            if self.verbose:
+                print("Warning!: loss_type must be one of ['square','nll'] for 'autoenc' family in HyperOpt. Setting to 'square'.")
+            self.loss_type = 'square'
             
         if self.decay_norm not in [1,2]:
             if self.verbose:
