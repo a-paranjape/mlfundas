@@ -1115,7 +1115,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             self.print_this("... will search over {0:d} iterations of {1:d} configurations".format(self.n_iter,self.max_config),self.logfile)
             if self.ensemble:
                 self.print_this("... will store best {0:d} networks in ensemble".format(self.ensemble_size),self.logfile)
-            if self.loss_type == 'square':
+            if (self.loss_type == 'square') | (self.family == 'autoenc'):
                 if self.test_type == 'perc':
                     self.print_this("... will use residual percentiles for hyperparameter comparison",self.logfile)
                 else:
@@ -1208,7 +1208,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                     print("Warning!: decay_norm_w must be one of [1,2] in HyperOpt. Setting to 2.")
                 self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
 
-        if (self.loss_type == 'square') & (self.test_type not in ['perc','mse']):
+        if ((self.loss_type == 'square') | (self.family == 'autoenc')) & (self.test_type not in ['perc','mse']):
             if self.verbose:
                 print("Warning: test_type for regression should be one of ['perc','mse'] in HyperOpt. Setting to 'perc'.")
             self.test_type = 'perc'
@@ -1985,14 +1985,22 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         self.family = params.get('family','seq')
         
         self.params = copy.deepcopy(params)
+        
+        self.verbose = self.params.get('verbose',True)
+        self.logfile = self.params.get('logfile',None)
 
         # ensure at least 1 hidden layer
         self.L = self.params.get('L',2)
         self.params['L'] = self.L
         self.bottleneck_layer = self.params.get('bottleneck_layer',int(np.min([1,self.L//2])))
 
-        # force loss to be square reconstruction loss
+        # force loss to be square or nll reconstruction loss
         self.loss_type = self.params.get('loss_type','square')
+        if self.loss_type not in ['square','nll']:
+            if self.verbose:
+                self.print_this("Warning: loss_type must be one of ['square','nll'] in AutoEncoder. Defaulting to 'square'.",
+                                self.logfile)
+            self.loss_type = 'square'
         self.params['loss_type'] = self.loss_type
 
         # ensure consistent standardization
@@ -2002,9 +2010,6 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         
         self.denoise = self.params.get('denoise',False)
         self.noise_level = self.params.get('noise_level',None)
-        
-        self.verbose = self.params.get('verbose',True)
-        self.logfile = self.params.get('logfile',None)
 
         if self.verbose:
             self.print_this('Autoencoder with family: '+self.family,self.logfile)
@@ -2021,7 +2026,13 @@ class AutoEncoder(Module,MLUtilities,Utilities):
             self.print_this('... initializing network',self.logfile)
 
         self.net = self.family_dict[self.family]['module'](params=self.params)
-        # self.resume = self.net.resume
+        if self.loss_type == 'nll':
+            # force net_type to be regression
+            self.net.net_type = 'reg'
+            if self.family == 'seq':
+                self.net.modules[-1].net_type = 'reg'
+            # else:
+            #     pass
         self.net_type = self.net.net_type
         self.file_stem = self.net.file_stem        
     #########################################
@@ -2032,7 +2043,10 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         """ Train autoencoder.
             -- X,params : as appropriate for training chosen family
         """
-        
+        if self.loss_type == 'nll':
+            if (X.min() < 0.0) | (X.max() > 1.0):
+                raise Exception("Training sample incompatible with 'nll' loss in AutoEncoder.")
+            
         noise = self.noise_level*self.net.rng.randn(X.shape[0],X.shape[1]) if self.denoise else 0.0
         
         self.net.train(X + noise, X.copy(), params=params)
@@ -2045,6 +2059,8 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         if self.family == 'seq':
             self.modules = copy.deepcopy(self.net.modules) 
             self.modules[-1].net_type = self.net.net_type
+        # else:
+        #     pass
 
         # load encoder and decoder
         if self.verbose:
