@@ -1583,18 +1583,18 @@ class HyperOpt(Module,MLUtilities,Utilities):
             W = int(params[c,1])
             if self.family == 'seq':
                 if self.fixed_width is None:
-                    pset['n_layer'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L))) for l in range(1,L)] 
+                    pset['n_layer'] = [int(self.data_dim*((W+1e-6)/self.data_dim)**(np.log(l+1)/np.log(L))) for l in range(1,L)] 
                 else:
                     pset['n_layer'] = [W]*(L-1) if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-2))
                 pset['n_layer'] += [self.target_dim]
             elif self.family == 'biseq':
                 if self.fixed_width is None:
-                    pset['n_layer_a'] = [int(self.data_dim*(self.data_dim/W)**(-np.log(l+1)/np.log(L+1))) for l in range(1,L+1)] 
+                    pset['n_layer_a'] = [int(self.data_dim*((W+1e-6)/self.data_dim)**(np.log(l+1)/np.log(L+1))) for l in range(1,L+1)] 
                 else:
                     pset['n_layer_a'] = [W]*L if self.fixed_width else [W] + list(self.rng.randint(param_mins[1],high=param_maxs[1],size=L-1))
                 W_w = int(params_w[c,1])
                 if self.fixed_width is None:
-                    pset['n_layer_w'] = [int(self.theta_dim*(self.theta_dim/W_w)**(-np.log(l+1)/np.log(Lw))) for l in range(1,Lw)] 
+                    pset['n_layer_w'] = [int(self.theta_dim*((W_w+1e-6)/self.theta_dim)**(np.log(l+1)/np.log(Lw))) for l in range(1,Lw)] 
                 else:
                     pset['n_layer_w'] = [W_w]*(Lw-1) if self.fixed_width else [W_w] + list(self.rng.randint(param_mins_w[1],
                                                                                                             high=param_maxs_w[1],size=Lw-2))
@@ -1603,11 +1603,11 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 pset['bottleneck_layer'] = L # pset['L']//2
                 
                 # excluding input layer, encoder has L layers, last width W
-                layers_enc = [int(self.data_dim*(W/self.data_dim)**(np.log(l+1)/np.log(L+1))) for l in range(1,L+1)]
+                layers_enc = [int(self.data_dim*((W+1e-6)/self.data_dim)**(np.log(l+1)/np.log(L+1))) for l in range(1,L+1)]
                 
                 # including output layer, decoder has L layers
                 # last width self.data_dim, rest are reverse of encoder layers excluding bottleneck
-                # layers_dec = [int(self.data_dim*(W/self.data_dim)**(np.log(l)/np.log(L+1))) for l in range(L,0,-1)]
+                # layers_dec = [int(self.data_dim*((W+1e-6)/self.data_dim)**(np.log(l)/np.log(L+1))) for l in range(L,0,-1)]
                 layers_dec = layers_enc[::-1][1:] + [self.data_dim]
                 
                 pset['n_layer'] = layers_enc + layers_dec 
