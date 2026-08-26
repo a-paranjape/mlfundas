@@ -868,9 +868,8 @@ class Sequential(Module,MLUtilities,Utilities):
 # Optimize hyperparams and architecture using random search
 #################
 class HyperOpt(Module,MLUtilities,Utilities):
-    """ Systematically build and train feed-forward NN for given set of data and targets. """
     #########################################
-    def __init__(self,setup_dict):
+    def __init__(self,setup_dict={}):
         """ Random search over hyperparameters to optimize (ensemble of) NN instances. 
             setup_dict is a dictionary specifying training data, network family and search parameters,
             with keys being a subset of
@@ -1218,14 +1217,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 print("Warning: test_type for regression should be one of ['perc','mse'] in HyperOpt. Setting to 'perc'.")
             self.test_type = 'perc'
 
-        ##################
-        # !!!!!!!!!!!!!!!!
-        # ENSEMBLE SHOULD BE EXTENDABLE TO AutoEncoder
-        # !!!!!!!!!!!!!!!!
-        ##################
-        if self.ensemble & (self.family != 'seq'):
+        if self.ensemble & (self.family not in ['seq','autoenc']):
             if self.verbose:
-                print("Warning: ensemble currently only available for Sequential family in HyperOpt. Setting ensemble = False.")
+                print("Warning: ensemble currently only available for Sequential and AutoEncoder families in HyperOpt. Setting ensemble = False.")
             self.ensemble = False
             
         if self.ensemble & (self.ensemble_size > self.n_iter*self.max_config):
@@ -1463,8 +1457,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
         """ Train various networks and select the one(s) that minimize)s( test loss.
             Returns: 
             -- net/neo: instance of self.family_module / NetworkEnsembleObject 
-            -- params_train: dictionary of parameters used for training net
-            -- mean_test_loss: mean test loss using final network
+            [-- params_train: dictionary of parameters used for training net]
+            [-- mean_test_loss: mean test loss using final network          ]
         """
         if self.verbose:
             self.print_this("Initiating search... ",self.logfile)
@@ -1670,7 +1664,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 net = copy.deepcopy(net_dict['net'])
                 net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
                 net.params['file_stem'] = net.file_stem
-                if self.family == 'seq':
+                if self.family in ['seq','autoenc']:
                     net.modules = gen_filestems(net.modules,net.file_stem)
                 elif self.family == 'biseq':
                     net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
@@ -1697,7 +1691,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             
             if self.verbose:
                 self.print_this("... defining and loading NetworkEnsembleObject",self.logfile)
-            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,verbose=self.verbose,logfile=self.logfile)
+            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,family=self.family,verbose=self.verbose,logfile=self.logfile)
             neo.load()
                 
             return neo
@@ -1757,7 +1751,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         if Path(self.file_stem).is_dir():
             shutil.rmtree(self.file_stem+'/')
         if self.ensemble:
-            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,verbose=self.verbose,logfile=self.logfile)
+            neo = NetworkEnsembleObject(ensemble_dir=self.file_stem_ensemble,family=self.family,verbose=self.verbose,logfile=self.logfile)
             neo.load()
             return neo
         else:
@@ -1771,22 +1765,164 @@ class HyperOpt(Module,MLUtilities,Utilities):
 #################################
 
 
+
+#################################
+# Optimize hyperparams and architecture for AutoEncoder using random search
+#################
+class HyperAuto(Module,MLUtilities,Utilities):
+    #############################
+    def __init__(self,setup_dict={}):
+        """ Wrapper around HyperOpt specialized for AutoEncoder, to allow ensembles to be built
+            with fixed bottleneck width and (optionally) noise level.
+
+            ** NOTE: For single (non-ensemble) version that searches over widths at fixed noise level, use HyperOpt instead. **
+
+            setup_dict should be structured identically to that for HyperOpt (see its doc string).
+
+            Following keys have altered interpretations:
+            ------------
+            -- widths: here, range for fixed bottleneck width within EACH ensemble.
+            -- max_config: here, total number of distinct configurations to search over for EACH ensemble.
+            ------------
+
+            Additionally, following keys are recognised:
+            ------------
+            -- noise_levels: range for noise levels (used if denoise is True, default is no noise)
+                             dict with structure 
+                             {'min': float (default 0.0), 'max': float (default 0.0)}
+            -- max_widths: int >= 1 (default 1); number of bottleneck width values to sample within specified range.
+                           Default samples a single value, leading to same compute as in HyperOpt.
+                           If > 1, compute scales linearly accordingly.
+            ------------
+
+            Creates dict self.hopt with max_widths instances of HyperOpt, accessible for later use.
+            These instances are used to train max_widths ensembles of AutoEncoder networks, 
+            each at fixed bottleneck width (and, if requested, noise level)
+        """
+        Utilities.__init__(self)
+        setup = copy.deepcopy(setup_dict)
+        setup['ensemble'] = True # force ensembling, assume ensemble_size is specified (else default 5 assumed by HyperOpt)
+
+        self.verbose = setup.get('verbose',True)
+        self.logfile = setup.get('logfile',None)
+
+        self.widths = setup.get('widths',{'min':2,'max':2})
+        setup['widths'] = self.widths
+        self.max_widths = setup.get('max_widths',1)
+        self.noise_levels = setup.get('noise_levels',{'min':0.0,'max':0.0})
+        
+        setup['verbose'] = False
+        self.file_stem = setup.get('file_stem','net')
+        setup['verbose'] = self.file_stem
+        
+        dummy = HyperOpt(setup_dict=setup) # dummy HyperOpt instance to ease initialization
+        dummy.check_dict(self.noise_levels,'noise_levels',float,0.0,np.inf)
+        shutil.rmtree(self.file_stem+'/')
+
+        param_mins = [self.widths['min'],self.noise_levels['min']]
+        param_maxs = [self.widths['max']+1,self.noise_levels['max']]
+        params = self.gen_latin_hypercube(Nsamp=self.max_widths,dim=2,param_mins=param_mins,param_maxs=param_maxs,rng=dummy.rng) # (max_widths,2)
+        dummy = None
+
+        self.hopt = {}
+        for a in range(self.max_widths):
+            W = int(params[a,0])
+            noise_level = params[a,1]
+            
+            sdict = copy.deepcopy(setup)
+            sdict['file_stem'] = self.file_stem + "_A{0:d}".format(a)
+            sdict['widths'] = {'min':W,'max':W}
+            sdict['noise_level'] = noise_level
+
+            self.hopt[a] = HyperOpt(setup_dict=sdict)
+
+        if self.verbose:
+            self.print_this(" ------- ",self.logfile)
+            self.print_this(" -- HyperAuto setup complete",self.logfile)
+            self.print_this(" ------- ",self.logfile)
+    #############################
+
+    #############################
+    def optimize(self):
+        """ Train various network ensembles at fixed bottleneck width (and noise level) and select the one(s) that minimize)s( test loss.
+            Returns: 
+            -- neo: instance of NetworkEnsembleObject 
+        """
+        if self.verbose:
+            self.print_this("Looping over ensembles... ",self.logfile)
+
+        neo = {}
+        for a in range(self.max_widths):
+            neo[a] = self.hopt[a].optimize()
+
+        ts_vals = self.gather_test_stats(neo)
+        neo_best = neo[np.argmin(ts_vals)]
+        neo = None
+        return neo_best
+    #############################
+
+    #############################
+    def gather_test_stats(self,neo_dict):
+        """ Simple utility to extract averaged test stat values for a collection of ensembles. """
+        ts_vals = []
+        # loop over ensembles
+        for a in range(self.max_widths):
+            ts_vals_a = []
+            for key in neo_dict[a].keys:
+                ts_vals_a.append(neo_dict[a].ensemble[key]['teststat'])
+            ts_vals.append(np.mean(ts_vals_a))
+            # # unfortunate hack
+            # file_stem_old = self.hopt[a].file_stem 
+            # self.hopt[a].file_stem = neo[a].file_stem_ensemble
+            # ptrain,ts = self.hopt[a].load_train()
+            # self.hopt[a].file_stem = file_stem_old
+        
+        return ts_vals
+    #############################
+
+    #############################
+    def load(self):
+        """ Load existing (best) ensemble of AutoEncoder instances as NEO. """
+        neo = {}
+        for a in range(self.max_widths):
+            neo[a] = self.hopt[a].load()
+
+        ts_vals = self.gather_test_stats(neo)
+        neo_best = neo[np.argmin(ts_vals)]
+        neo = None
+        return neo_best
+    #############################
+
+    
+#################################
+
 #################################
 class NetworkEnsembleObject(MLUtilities,Utilities):
     #########################################
-    def __init__(self,ensemble_dir='./',verbose=True,logfile=None):
+    def __init__(self,ensemble_dir='./',family='seq',verbose=True,logfile=None):
         """ Class to load collection of Sequential instances as an ensemble of trained networks.
             -- ensemble_dir: path to folder containing stored instances of mutually compatible networks, e.g. as result of BuildNN.trainNN call.
+            -- family: str [default 'seq']; one of 
+                       -- 'seq' (Sequential) 
+                       -- 'autoenc' (AutoEncoder)
             Methods:
-            -- load: load all Sequential instances in ensemble_dir into the dictionary self.ensemble
+            -- load: load all family instances in ensemble_dir into the dictionary self.ensemble
             -- predict: weighted average prediction over all networks
         """
         self.ensemble_dir = ensemble_dir
+        self.family = family
         self.verbose = verbose
         self.logfile = logfile
 
+        if self.family == 'seq':
+            self.family_module = Sequential
+        elif self.family == 'autoenc':
+            self.family_module = AutoEncoder
+        else:
+            raise Exception("Only Sequential or AutoEncoder family allowed in NetworkEnsembleObject.")
+
         if not Path(self.ensemble_dir).is_dir():
-            raise Exception(self.ensemble_dir + ' is not a valid path for a NetworkEnsembleObject')
+            raise Exception(self.ensemble_dir + ' is not a valid path for a NetworkEnsembleObject.')
 
         self.ensemble = {} # will be updated by self.load as dictionary of Sequential instances and their teststats and training params.
         if self.verbose:
@@ -1811,7 +1947,7 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
             with open(key+'.pkl', 'rb') as f:
                 params_setup = pickle.load(f)
             params_setup['file_stem'] = key # to avoid path resolution issues
-            net = Sequential(params=params_setup)
+            net = self.family_module(params=params_setup)
             net.load()
             net.load_loss_history()
             self.ensemble[key]['net'] = net
@@ -1867,19 +2003,31 @@ class NetworkEnsembleObject(MLUtilities,Utilities):
     #########################################
 
     #########################################
-    def predict(self,X,return_prob=False):
+    def predict(self,X,return_prob=False,autoenc=None):
         """ Prediction method for ensemble.
             -- X: array of shape (self.n0,nsamp)
             -- return_prob: bool (default False). Only used if self.net_type=='class'.
                             If True, return weighted average class-wise probability, else return discrete labels.
+            -- autoenc: None (default) or str, relevant when self.family = 'autoenc'.
+                        If not None, should be either 'encoder' or 'decoder'.
         """
         if len(self.keys) == 0:
-            raise Exception("prediction can only happen after ensemble is loaded.")
-
-        predictions = np.zeros((len(self.keys),self.nlast,X.shape[1]))
+            raise Exception("Prediction can only happen after ensemble is loaded.")
+        
+        dim_last = self.ensemble[self.keys[0]]['net'].encoder.n_layer[-1] if autoenc == 'encoder' else self.nlast 
+        predictions = np.zeros((len(self.keys),dim_last,X.shape[1]))
         if self.net_type == 'reg':
-            for r in range(len(self.keys)):
-                predictions[r] = self.ensemble[self.keys[r]]['net'].predict(X)
+            if autoenc is None:
+                for r in range(len(self.keys)):
+                    predictions[r] = self.ensemble[self.keys[r]]['net'].predict(X)
+            elif autoenc == 'encoder':
+                for r in range(len(self.keys)):
+                    predictions[r] = self.ensemble[self.keys[r]]['net'].encoder.predict(X)
+            elif autoenc == 'decoder':
+                for r in range(len(self.keys)):
+                    predictions[r] = self.ensemble[self.keys[r]]['net'].decoder.predict(X)
+            else:
+                raise Exception("autoenc must be one of [None,'encoder','decoder'] in NEO.predict")
             Ypred = np.sum(self.weights*predictions.T,axis=-1).T
         else:
             for r in range(len(self.keys)):
@@ -2038,8 +2186,12 @@ class AutoEncoder(Module,MLUtilities,Utilities):
                 self.net.modules[-1].net_type = 'reg'
             # else:
             #     pass
-        self.net_type = self.net.net_type
-        self.file_stem = self.net.file_stem        
+            
+        self.n0 = self.net.n0               # .................
+        self.n_layer = self.net.n_layer     # needed for compatibility with 
+        self.net_type = self.net.net_type   # NetworkEnsembleObject and HyperOpt
+        self.file_stem = self.net.file_stem # .................
+        self.neg_labels = None
     #########################################
 
     
@@ -2055,17 +2207,6 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         noise = self.noise_level*self.net.rng.randn(X.shape[0],X.shape[1]) if self.denoise else 0.0
         
         self.net.train(X + noise, X.copy(), params=params)
-        
-        self.training_loss = self.net.training_loss.copy()
-        self.val_loss = self.net.val_loss.copy()
-        self.epochs = self.net.epochs.copy()
-
-        # these help with HyperOpt interface
-        if self.family == 'seq':
-            self.modules = copy.deepcopy(self.net.modules) 
-            self.modules[-1].net_type = self.net.net_type
-        # else:
-        #     pass
 
         # load encoder and decoder
         if self.verbose:
@@ -2115,6 +2256,18 @@ class AutoEncoder(Module,MLUtilities,Utilities):
     def load(self):
         """ Load weights and setup params from file(s) and extract encoder and decoder as network family instances. """
         self.net.load()
+        self.net.load_loss_history()
+        
+        self.training_loss = self.net.training_loss.copy()
+        self.val_loss = self.net.val_loss.copy()
+        self.epochs = self.net.epochs.copy()
+
+        # these help with HyperOpt interface
+        if self.family == 'seq':
+            self.modules = copy.deepcopy(self.net.modules) 
+            self.modules[-1].net_type = self.net.net_type
+        # else:
+        #     pass
 
         # extract encoder as specified hidden (bottleneck) layer
         self.encoder = self.net.extract_hidden_features(layer=self.bottleneck_layer)
@@ -2138,6 +2291,13 @@ class AutoEncoder(Module,MLUtilities,Utilities):
         
         return
     #########################################
+
+    #########################################
+    def calc_N_freeparams(self):
+        """Simple wrapper around sef.net.calc_N_freeparams()."""
+        return self.net.calc_N_freeparams()
+    #########################################
+    
 #################################
 
 
