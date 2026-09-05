@@ -410,6 +410,17 @@ class MLUtilities(object):
         return np.array(factors)
     ###################
     
+    ###################
+    def calc_R2_score(self,Y_pred,Y_true):
+        """ Simple utility to calculate flattened R2 score (https://en.wikipedia.org/wiki/Coefficient_of_determination). 
+            -- Y_pred,Y_true: predicted,true values, must have compatible shapes.
+            Returns scalar float.
+        """
+        SS_res = np.sum((Y_true - Y_pred)**2)
+        SS_tot = np.sum((Y_true - Y_true.mean())**2)
+        Rsq = 1 - SS_res/(SS_tot + 1e-15)
+        return Rsq
+    ###################
     
     ###################
     # helper functions to re-package images into vectors

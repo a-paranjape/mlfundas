@@ -908,7 +908,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- check_after: int (default 300); epoch after which to activate validation (early stopping) checks. 
                             To swith off early stopping, set >= max_epoch.
             -- decay_norm: int (default 2); value of norm for weight decay, either 1 or 2.
-            -- test_type: str (default 'perc'); one of 'perc' (residual percentiles) or 'mse' (mean squared error),
+            -- test_type: str (default 'perc'); one of 'perc' (residual percentiles), 'mse' (mean squared error), 'R2' (1 - R2),
                           relevant for regression (square/hinge loss).
             -- seed: int or None (default); seed for random number generation. 
             -- file_stem: str (default 'net'); top-level path to store temporary files and final outputs.
@@ -1117,8 +1117,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
             if (self.loss_type == 'square') | (self.family == 'autoenc'):
                 if self.test_type == 'perc':
                     self.print_this("... will use residual percentiles for hyperparameter comparison",self.logfile)
-                else:
+                elif self.test_type == 'mse':
                     self.print_this("... will use mean squared error for hyperparameter comparison",self.logfile)
+                elif self.test_type == 'R2':
+                    self.print_this("... will use 1-R2 for hyperparameter comparison",self.logfile)
             else:
                 self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
             if self.wt_decays['max'] > 0.0:
@@ -1212,9 +1214,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
                     print("Warning!: decay_norm_w must be one of [1,2] in HyperOpt. Setting to 2.")
                 self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
 
-        if ((self.loss_type == 'square') | (self.family == 'autoenc')) & (self.test_type not in ['perc','mse']):
+        if ((self.loss_type == 'square') | (self.family == 'autoenc')) & (self.test_type not in ['perc','mse','R2']):
             if self.verbose:
-                print("Warning: test_type for regression should be one of ['perc','mse'] in HyperOpt. Setting to 'perc'.")
+                print("Warning: test_type for regression should be one of ['perc','mse','R2'] in HyperOpt. Setting to 'perc'.")
             self.test_type = 'perc'
 
         if self.ensemble & (self.family not in ['seq','autoenc']):
@@ -1419,6 +1421,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
             elif self.test_type == 'mse':
                 ts = np.sum((net.predict(self.X_test) - self.Y_test)**2)/(self.Y_test.size + 1e-15)
                 ts = np.sqrt(ts)
+            elif self.test_type == 'R2':
+                ts = 1 - self.calc_R2_score(net.predict(self.X_test),self.Y_test) # available from MLUtilities
         else:
             if self.Y_test.shape[0] == 1:
                 ts = np.where(np.rint(net.predict(self.X_test)) != np.rint(self.Y_test))[0].size/self.Y_test.shape[1]
