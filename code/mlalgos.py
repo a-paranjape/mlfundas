@@ -633,17 +633,6 @@ class Sequential(Module,MLUtilities,Utilities):
         if self.verbose:
             self.print_this("... loading best network",self.logfile)
         self.load()
-
-        if self.reg_fun == 'drop':
-            if self.verbose:
-                self.print_this("... correcting for drop regularization",self.logfile)
-            # convert DropNorm layers to effectively Identity
-            for m in self.modules[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.drop = False
-            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
-            # biases untouched.
-            for m in self.modules[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
-                m.W *= (1-self.p_drop)
                 
         if self.verbose:
             self.print_this("... ... done",self.logfile)
@@ -739,6 +728,17 @@ class Sequential(Module,MLUtilities,Utilities):
             self.standardize_Y = True
             self.Y_std = 1.0
             self.Y_mean = 0.0
+
+        if self.reg_fun == 'drop':
+            if self.verbose:
+                self.print_this("... correcting for drop regularization",self.logfile)
+            # convert DropNorm layers to effectively Identity
+            for m in self.modules[2::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.drop = False
+            # multiply all linear weights by 1-p_drop. (ML course says p, not 1-p! but that's true if p = retention prob as in Srivastava+2014)
+            # biases untouched.
+            for m in self.modules[::3]: # note steps of 3 due to (Linear,Activation,DropNorm) repeating structure
+                m.W *= (1-self.p_drop)
             
         return
     #########################################
