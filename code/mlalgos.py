@@ -1680,15 +1680,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
             for s in sorter:
                 net_dict = copy.deepcopy(all_nets[s])
                 net = copy.deepcopy(net_dict['net'])
-                net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
-                net.params['file_stem'] = net.file_stem
-                if self.family in ['seq','autoenc']:
-                    net.modules = gen_filestems(net.modules,net.file_stem)
-                elif self.family == 'biseq':
-                    net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
-                    net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
-                net.save()
-                net.save_loss_history()
+                self.copy_network(net,self.file_stem_ensemble + '/net_r{0:d}'.format(cnt))
+                # net.file_stem = self.file_stem_ensemble + '/net_r{0:d}'.format(cnt)
+                # net.params['file_stem'] = net.file_stem
+                # if self.family in ['seq','autoenc']:
+                #     net.modules = gen_filestems(net.modules,net.file_stem)
+                # elif self.family == 'biseq':
+                #     net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
+                #     net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
+                # net.save()
+                # net.save_loss_history()
 
                 del net_dict['net']
                 # now net_dict = {'teststat':value,'ptrain':dict} for this network
@@ -1719,15 +1720,16 @@ class HyperOpt(Module,MLUtilities,Utilities):
             ind_best = np.argmin(tsvals)
             best_net = copy.deepcopy(all_nets[ind_best])
             net = copy.deepcopy(best_net['net'])
-            net.file_stem = self.file_stem
-            net.params['file_stem'] = net.file_stem
-            if self.family in ['seq','autoenc']:
-                net.modules = gen_filestems(net.modules,net.file_stem)
-            elif self.family == 'biseq':
-                net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
-                net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
-            net.save()
-            net.save_loss_history()
+            self.copy_network(net,self.file_stem)
+            # net.file_stem = self.file_stem
+            # net.params['file_stem'] = net.file_stem
+            # if self.family in ['seq','autoenc']:
+            #     net.modules = gen_filestems(net.modules,net.file_stem)
+            # elif self.family == 'biseq':
+            #     net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
+            #     net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
+            # net.save()
+            # net.save_loss_history()
 
             del best_net['net']
             # now best_net = {'teststat':value,'ptrain':dict} for best network
@@ -1746,6 +1748,24 @@ class HyperOpt(Module,MLUtilities,Utilities):
             return net,params_train,teststat
     #############################
 
+    #############################
+    def copy_network(self,net,new_file_stem):
+        """ Utility to self-consistently copy a network to a new location.
+            -- net: network instance to be copied
+            -- new_file_stem: str, target location
+        """
+        net.file_stem = new_file_stem
+        net.params['file_stem'] = net.file_stem
+        if self.family in ['seq','autoenc']:
+            net.modules = gen_filestems(net.modules,net.file_stem)
+        elif self.family == 'biseq':
+            net.modules_a = gen_filestems(net.modules_a,net.file_stem+'_a')
+            net.modules_w = gen_filestems(net.modules_w,net.file_stem+'_w')
+        net.save()
+        net.save_loss_history()
+        return
+    #############################        
+    
     #############################
     def save_train(self,net_dict):
         """ Save training params and best test stat to file. """
