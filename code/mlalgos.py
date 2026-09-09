@@ -1398,44 +1398,32 @@ class HyperOpt(Module,MLUtilities,Utilities):
         
         pset['file_stem'] = pset['file_stem'] + '_r{0:d}'.format(r) 
 
-        # # check whether previously trained instance exists.
-        # # this will override any freshly sampled parameters in pset.
-        # check_file = pset['file_stem'] + '_loss_history.pkl'
-        # machine_exists = Path(check_file).is_file()
+        # check whether previously trained instance exists.
+        # this will override any freshly sampled parameters in pset.
+        check_file = pset['file_stem'] + '_loss_history.pkl'
+        machine_exists = Path(check_file).is_file()
 
-        # if machine_exists:
-        #     # load network parameters
-        #     with open(pset['file_stem'] + '.pkl', 'rb') as f:
-        #         pset_old = pickle.load(f)
-        #     # instantiate network
-        #     net = self.family_module(params=pset_old)
-        #     # load network and loss history
-        #     net.load()
-        #     net.load_loss_history()
-        # else:
-        #     # instantiate network
-        #     net = self.family_module(params=pset) 
-        #     # train
-        #     if self.family in ['gan']:
-        #         raise NotImplementedError()
-        #         # SEE BELOW
-        #         # net.train(self.X_train,params=ptrn)
-        #     elif self.family in ['autoenc']:
-        #         net.train(self.X_train,params=ptrn)
-        #     else:
-        #         net.train(self.X_train,self.Y_train,params=ptrn)
-        
-        # instantiate network
-        net = self.family_module(params=pset) 
-        # train
-        if self.family in ['gan']:
-            raise NotImplementedError()
-            # SEE BELOW
-            # net.train(self.X_train,params=ptrn)
-        elif self.family in ['autoenc']:
-            net.train(self.X_train,params=ptrn)
+        if machine_exists:
+            # load network parameters
+            with open(pset['file_stem'] + '.pkl', 'rb') as f:
+                pset_old = pickle.load(f)
+            # instantiate network
+            net = self.family_module(params=pset_old)
+            # load network and loss history
+            net.load()
+            net.load_loss_history()
         else:
-            net.train(self.X_train,self.Y_train,params=ptrn)
+            # instantiate network
+            net = self.family_module(params=pset) 
+            # train
+            if self.family in ['gan']:
+                raise NotImplementedError()
+                # SEE BELOW
+                # net.train(self.X_train,params=ptrn)
+            elif self.family in ['autoenc']:
+                net.train(self.X_train,params=ptrn)
+            else:
+                net.train(self.X_train,self.Y_train,params=ptrn)
 
         # test
         # BELOW NEEDS TO BE MODIFIED FOR HANDLING GAN
