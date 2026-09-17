@@ -266,6 +266,7 @@ class SoftMax(Module,MLUtilities):
 #################
 class DropNorm(Module,MLUtilities):
     def __init__(self,layer=1,resume=False,p_drop=0.2,rng=None,drop=True):
+        raise NotImplementedError("")
         self.p_drop = p_drop
         self.drop = drop
         self.rng = np.random.RandomState() if rng is None else rng
