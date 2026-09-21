@@ -240,4 +240,37 @@ class Utilities(object):
         return elmt not in wanted_elmt
     ############################################################
 
+    ############################################################
+    # adapted from public Gemini version when prompted by
+    # "python encode arbitrary english word into integer"
+    ########################
+    # !! USE WITH CAUTION !!
+    ########################
+    def word_to_int(self,word: str) -> int:
+        """Encodes an arbitrary string into a unique integer."""
+        # Convert the word to bytes (UTF-8), then convert those bytes to an integer
+        return int.from_bytes(word.encode('utf-8'), byteorder='big')
+
+    def int_to_word(self,number: int) -> str:
+        """Decodes the integer back into the original string."""
+        # Find how many bytes are needed to represent the integer
+        byte_length = (number.bit_length() + 7) // 8
+        # Convert the integer back to bytes, then decode to a string
+        return number.to_bytes(byte_length, byteorder='big').decode('utf-8')
+    ########################
+    # # --- Example Usage ---
+    # original_word = "Pythonic"
+    # encoded_num = word_to_int(original_word)
+    # decoded_word = int_to_word(encoded_num)
+
+    # print(f"Original: {original_word}")
+    # print(f"Encoded Integer: {encoded_num}")
+    # print(f"Decoded: {decoded_word}")
+
+    # # # generated output:
+    # # Original: Pythonic
+    # # Encoded Integer: 5798793987111151971
+    # # Decoded: Pythonic
+    ############################################################
+    
 #######################################################################
