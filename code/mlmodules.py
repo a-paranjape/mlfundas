@@ -404,16 +404,20 @@ class BatchNorm(Module,MLUtilities):
 # possible loss functions
 #################
 class NLL(Module,MLUtilities):
+    def __init__(self,w_pos=1.0):
+        self.w_pos = w_pos # weight for positive samples
     def forward(self,Ypred,Y):
         self.Ypred = Ypred # (1,b)
         self.Y = Y
         self.Y[self.Y < 0] = 0.0 # ensure only 0 or 1 passed as Y
         self.Ypred[self.Ypred < 0] = 0.0 # ensure only 0 or 1 passed as Ypred
-        Loss = -self.Y*np.log(self.Ypred + 1e-15) - (1-self.Y)*np.log(1-self.Ypred + 1e-15)
+        # Loss = -self.Y*np.log(self.Ypred + 1e-15) - (1-self.Y)*np.log(1-self.Ypred + 1e-15)
+        Loss = -self.w_pos*self.Y*np.log(self.Ypred + 1e-15) - (1-self.Y)*np.log(1-self.Ypred + 1e-15)
         return np.sum(Loss) # scalar
 
     def backward(self):
-        dLdZ = (self.Ypred - self.Y) # (n_last,b)
+        # dLdZ = (self.Ypred - self.Y) # (n_last,b)
+        dLdZ = self.Ypred - self.w_pos*self.Y + (self.w_pos-1)*self.Y*self.Ypred # (n_last,b)
         return dLdZ # normally would return dL/dA, but doing this will be numerically more stable when Ypred ~ 0.
 #################
 

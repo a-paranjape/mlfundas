@@ -179,6 +179,8 @@ class Sequential(Module,MLUtilities,Utilities):
                                         with items being activation module instances.
             -- params['loss_type']: str, loss function in ['square','hinge','nll','nllm'] or 'custom...'.
                                     If 'custom...', then also define dictionary params['custom_loss']
+            -- params['w_pos']: positive float (default 1.0), weight attached to positive labels in binary classification problem; 
+                                used by NLL loss.
             -- params['custom_loss']: dictionary with keys matching 'custom...' entry in params['loss_type']
                                       with items being loss module instances.
             -- params['neg_labels']: boolean, are actual labels {-1,+1} or {0,1} for binary classification. Default True ({-1,1}).
@@ -214,6 +216,7 @@ class Sequential(Module,MLUtilities,Utilities):
         self.atypes = params.get('atypes',['sigm']) # default assumes classification problem
         self.custom_atypes = params.get('custom_atypes',None) 
         self.loss_type = params.get('loss_type','nll') # loss and last atype must be consistent
+        self.w_pos = params.get('w_pos',1.0) 
         self.custom_loss = params.get('custom_loss',None) 
         self.neg_labels = params.get('neg_labels',True)
         self.threshold = params.get('threshold',None)
@@ -270,6 +273,8 @@ class Sequential(Module,MLUtilities,Utilities):
             if ('lrelu' in self.atypes):
                 self.print_this("... ... leaky ReLU will use slope = {0:.2e}".format(self.lrelu_slope),self.logfile)
             self.print_this("... ... using loss function '"+self.loss_type+"'",self.logfile)
+            if self.loss_type == 'nll':
+                self.print_this("... ... ... with positive weight: {0:.3e}".format(self.w_pos),self.logfile)
             if self.reg_fun == 'drop':
                 self.print_this("... ... using dropout regularization with p_drop = {0:.3f}".format(self.p_drop),self.logfile)
             elif self.reg_fun == 'bn':
@@ -305,7 +310,9 @@ class Sequential(Module,MLUtilities,Utilities):
                 self.print_this("Warning!: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
         elif self.loss_type == 'nll':
-            self.loss = NLL()
+            if not (self.w_pos > 0.0):
+                raise Exception("w_pos should be strictly positive for NLL loss.")
+            self.loss = NLL(w_pos=self.w_pos)
             if self.verbose & (self.atypes[-1] != 'sigm'):
                 self.print_this("Warning!: last activation " + self.atypes[-1]
                                 + " seems inconsistent with " + self.loss_type + " loss. Proceed with caution!",self.logfile)
@@ -904,6 +911,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                            If not None, CurriculumNetwork with specified family and curriculum will be trained.
             -- standardize_X: bool (default True); whether or not to standardize features.
             -- standardize_Y: bool (default True); whether or not to standardize labels.
+            -- w_pos: positive float (default 1.0), weight attached to positive labels in binary classification problem; used by NLL loss.
             -- max_epoch: int (default 1000000); maximum number of training epochs
             -- check_after: int (default 300); epoch after which to activate validation (early stopping) checks. 
                             To swith off early stopping, set >= max_epoch.
@@ -1021,6 +1029,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
 
         self.standardize_X = setup_dict.get('standardize_X',True)
         self.standardize_Y = setup_dict.get('standardize_Y',True)
+        self.w_pos = setup_dict.get('w_pos',1.0)
         self.max_epoch = setup_dict.get('max_epoch',1000000)
         self.check_after = setup_dict.get('check_after',300)
         self.decay_norm = setup_dict.get('decay_norm',2)
@@ -1123,6 +1132,8 @@ class HyperOpt(Module,MLUtilities,Utilities):
                     self.print_this("... will use 1-R2 for hyperparameter comparison",self.logfile)
             else:
                 self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
+            if self.loss_type == 'nll':
+                self.print_this("... will use NLL positive weight: {0:.3e}".format(self.w_pos),self.logfile)
             if self.wt_decays['max'] > 0.0:
                 self.print_this("... weight decays will use norm {0:d}".format(self.decay_norm),self.logfile)
             if self.family == 'autoenc':
@@ -1203,6 +1214,10 @@ class HyperOpt(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning!: loss_type must be one of ['square','nll'] for 'autoenc' family in HyperOpt. Setting to 'square'.")
             self.loss_type = 'square'
+        
+        if self.loss_type == 'nll':
+            if not (self.w_pos > 0.0):
+                raise Exception("w_pos should be strictly positive for NLL loss.")
             
         if self.decay_norm not in [1,2]:
             if self.verbose:
@@ -1496,7 +1511,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
         mb_count = int(np.sqrt(self.n_train))
         
         pset = {'data_dim':self.data_dim,'loss_type':self.loss_type,'adam':True,'seed':self.seed,
-                'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,
+                'standardize_X':self.standardize_X,'standardize_Y':self.standardize_Y,'w_pos':self.w_pos,
                 'file_stem':self.file_stem+'/net','verbose':False,'logfile':self.logfile,'neg_labels':self.neg_labels}            
         ptrn = {'max_epoch':self.max_epoch,'mb_count':mb_count,'val_frac':self.val_frac,'check_after':self.check_after,
                 'dream_schedule':{}}
@@ -3214,6 +3229,8 @@ class GAN(Module,MLUtilities,Utilities):
             ---- common
             -- params['resume']: boolean, whether to resume/load from existing network or start afresh. Default False (i.e., start afresh)
             -- params['gan_type']: str, specify GAN type: one of ['minimax','modified','wasserstein'] (default 'modified')
+            -- params['w_pos']: positive float (default 1.0), weight attached to positive labels in binary classification problem; 
+                                used by NLL loss.
             -- params['label_smoothing']: None or float in (0,0.5), amount of label smoothing to apply (default None)
             -- params['standardize']: boolean, whether or not to standardize training data in train() (default True)
             -- params['noise']: None or float. If not None, add isotropic Gaussian noise with width 'noise'/t at step t 
@@ -3237,6 +3254,7 @@ class GAN(Module,MLUtilities,Utilities):
         self.params = params
         
         self.gan_type = params.get('gan_type','modified')
+        self.w_pos = params.get('w_pos',1.0) 
         
         self.n0 = params.get('data_dim',None)
         self.n0ran = params.get('rand_dim',None)
@@ -3288,11 +3306,10 @@ class GAN(Module,MLUtilities,Utilities):
             
         self.check_init()
 
-        self.loss = NLL() if self.gan_type in ['modified','minimax'] else Wasserstein()
+        self.loss = NLL(w_pos=self.w_pos) if self.gan_type in ['modified','minimax'] else Wasserstein()
         self.start_d = -2 if self.gan_type in ['modified','minimax'] else -1 # will control backward_d
         self.net_type = 'reg'
-        
-        
+
         if self.verbose:
             self.print_this("... GAN type: "+self.gan_type,self.logfile)
         
@@ -3382,6 +3399,11 @@ class GAN(Module,MLUtilities,Utilities):
             if self.verbose:
                 print("Warning!: gan_type must be one of ['minimax','modified','wasserstein'] in GAN(). Setting to 'modified'.")
             self.gan_type = 'modified'
+            
+        if self.gan_type in ['modified','minimax']:
+            if not (self.w_pos > 0.0):
+                raise Exception("w_pos should be strictly positive for NLL loss.")
+        
             
         if len(self.atypes_g) != self.Lg:
             raise TypeError('Incompatible atypes_g in GAN(). Expecting size {0:d}, got {1:d}'.format(self.Lg,len(self.atypes_g)))
