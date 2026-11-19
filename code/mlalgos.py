@@ -916,8 +916,9 @@ class HyperOpt(Module,MLUtilities,Utilities):
             -- check_after: int (default 300); epoch after which to activate validation (early stopping) checks. 
                             To swith off early stopping, set >= max_epoch.
             -- decay_norm: int (default 2); value of norm for weight decay, either 1 or 2.
-            -- test_type: str (default 'perc'); one of 'perc' (residual percentiles), 'mse' (mean squared error), 'R2' (1 - R2),
-                          relevant for regression (square/hinge loss).
+            -- test_type: str (default 'perc'); 
+                          for regression (square/hinge loss): one of 'perc' (residual percentiles), 'mse' (mean squared error), 'R2' (1 - R2),
+                          for classification (nll/nllm loss): one of 'accuracy','precision','recall','F1score'
             -- seed: int or None (default); seed for random number generation. 
             -- file_stem: str (default 'net'); top-level path to store temporary files and final outputs.
 
@@ -1131,7 +1132,7 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 elif self.test_type == 'R2':
                     self.print_this("... will use 1-R2 for hyperparameter comparison",self.logfile)
             else:
-                self.print_this("... will use misclassification fraction for hyperparameter comparison",self.logfile)
+                self.print_this(f"... will use {self.test_type} for hyperparameter comparison",self.logfile)
             if self.loss_type == 'nll':
                 self.print_this("... will use NLL positive weight: {0:.3e}".format(self.w_pos),self.logfile)
             if self.wt_decays['max'] > 0.0:
@@ -1229,10 +1230,18 @@ class HyperOpt(Module,MLUtilities,Utilities):
                     print("Warning!: decay_norm_w must be one of [1,2] in HyperOpt. Setting to 2.")
                 self.decay_norm_w = 2 # safest is 2 if user is unsure about role of decay norm
 
-        if ((self.loss_type == 'square') | (self.family == 'autoenc')) & (self.test_type not in ['perc','mse','R2']):
-            if self.verbose:
-                print("Warning: test_type for regression should be one of ['perc','mse','R2'] in HyperOpt. Setting to 'perc'.")
-            self.test_type = 'perc'
+        if ((self.loss_type == 'square') | (self.family == 'autoenc')):
+            allowed_tt =  ['perc','mse','R2']
+            if (self.test_type not in allowed_tt):
+                if self.verbose:
+                    print(f"Warning: test_type for regression should be one of {allowed_tt} in HyperOpt. Setting to 'perc'.")
+                self.test_type = 'perc'
+        elif (self.loss_type in ['nll','nllm']):
+            allowed_tt = ['accuracy','precision','recall','F1score']
+            if (self.test_type not in allowed_tt):
+                if self.verbose:
+                    print(f"Warning: test_type for classification should be one of {allowed_tt} in HyperOpt. Setting to 'accuracy'.")
+                self.test_type = 'accuracy'
 
         if self.ensemble & (self.family not in ['seq','autoenc']):
             if self.verbose:
@@ -1454,12 +1463,14 @@ class HyperOpt(Module,MLUtilities,Utilities):
                 ts = 1 - self.calc_R2_score(net.predict(self.X_test),self.Y_test) # available from MLUtilities
         else:
             if self.Y_test.shape[0] == 1:
-                ts = np.where(np.rint(net.predict(self.X_test)) != np.rint(self.Y_test))[0].size/self.Y_test.shape[1]
+                asc = self.assess_classification(net.predict(self.X_test),self.Y_test,neg_labels=self.neg_labels)
+                ts = 1.0 - asc[self.test_type]
+                asmc = None
+                # ts = np.where(np.rint(net.predict(self.X_test)) != np.rint(self.Y_test))[0].size/self.Y_test.shape[1]
             else:
                 asmc = self.assess_multi_classification(net.predict(self.X_test),self.Y_test)
-                ts = 1.0 - asmc['accuracy']
+                ts = 1.0 - asmc[self.test_type]
                 asmc = None
-            # this is fraction of predictions that are incorrect
             
         if not np.isfinite(ts):
             ts = 1e30
